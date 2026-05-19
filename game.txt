@@ -1,0 +1,21 @@
+Board Size:   9
+Handicap      0
+Komi:         6.5
+Move Number:  57
+To Move:      White
+Ko:           none
+
+    White (O) has captured 6 pieces
+    Black (X) has captured 1 pieces
+
+    A B C D E F G H J        Last move: Black B9
+  9 .(X). . X X X . . 9
+  8 O O O O O O O X X 8
+  7 X X X . . O . O O 7
+  6 X . X X O O O X . 6
+  5 O O X . X O X X . 5
+  4 . O X X O . O . . 4
+  3 O . O X O O + . . 3
+  2 X O . O O X . . . 2
+  1 . X O . . . . . . 1
+    A B C D E F G H J

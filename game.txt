@@ -1,21 +1,86 @@
 Board Size:   9
 Handicap      0
 Komi:         6.5
-Move Number:  57
+Move Number:  61
 To Move:      White
 Ko:           none
 
-    White (O) has captured 6 pieces
+    White (O) has captured 14 pieces
     Black (X) has captured 1 pieces
 
-    A B C D E F G H J        Last move: Black B9
-  9 .(X). . X X X . . 9
-  8 O O O O O O O X X 8
-  7 X X X . . O . O O 7
-  6 X . X X O O O X . 6
-  5 O O X . X O X X . 5
-  4 . O X X O . O . . 4
-  3 O . O X O O + . . 3
-  2 X O . O O X . . . 2
-  1 . X O . . . . . . 1
+    A B C D E F G H J        Last move: Black A7
+  9 . O X X X O X X . 9
+  8 O . O . O . O O O 8
+  7(X)O O X X O X . . 7
+  6 . . . O X O X . . 6
+  5 O O . O X O X . . 5
+  4 . . O O X O O . . 4
+  3 X X O . O . + O . 3
+  2 X O . O . . O . . 2
+  1 O . O . . . . . . 1
     A B C D E F G H J
+
+MOVE LOG
+========
+
+1. E5
+2. F6
+3. G7
+4. F7
+5. G6
+6. F5
+7. E6
+8. C3
+9. D3
+10. C4
+11. C5
+12. D2
+13. C2
+14. B2
+15. B3
+16. C1
+17. B1
+18. E3
+19. A2
+20. A1
+21. A3
+22. C7
+23. D7
+24. D5
+25. E4
+26. D4
+27. C6
+28. D6
+29. E7
+30. B5
+31. B6
+32. B7
+33. A6
+34. A5
+35. A7
+36. A8
+37. B8
+38. F4
+39. G5
+40. G4
+41. A9
+42. B9
+43. C9
+44. C8
+45. D9
+46. E8
+47. E9
+48. F9
+49. G9
+50. G8
+51. H9
+52. H8
+53. J9
+54. J8
+55. G9
+56. H3
+57. H9
+58. G2
+59. F8
+60. F9
+61. A7

@@ -19,11 +19,12 @@ from referee import (
     undo,
     validate_state,
 )
-from render import render_text
+from render import render_text, validate_rendered_text
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_DIR = REPO_ROOT / "docs" / "legacy-ascii"
+FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures" / "renderer"
 
 
 def play_sequence(state: GameState, moves: list[tuple[Color, str]]) -> GameState:
@@ -204,6 +205,11 @@ class RefereeRulesTests(unittest.TestCase):
 
 
 class RendererTests(unittest.TestCase):
+    def assert_board_rows_uniform_width(self, rendered: str) -> None:
+        board_rows = [line for line in rendered.splitlines() if line.startswith("  ") and line[2:3].isdigit()]
+        self.assertTrue(board_rows)
+        self.assertEqual(len({len(row) for row in board_rows}), 1)
+
     def test_blank_board_matches_legacy_init(self) -> None:
         state = GameState.new_game()
         rendered = render_text(state)
@@ -216,6 +222,22 @@ class RendererTests(unittest.TestCase):
         rendered = render_text(state)
         self.assertIn("(X)", rendered)
         self.assertNotIn("+", next(line for line in rendered.splitlines() if line.startswith("  5 ")))
+        self.assertIn("  5 . . . .(X). . . . 5", rendered)
+        self.assert_board_rows_uniform_width(rendered)
+
+    def test_left_edge_last_move_stays_aligned(self) -> None:
+        state = GameState.new_game()
+        apply_play(state, "black", "A5")
+        rendered = render_text(state)
+        self.assertIn("  5(X). . . + . . . . 5", rendered)
+        self.assert_board_rows_uniform_width(rendered)
+
+    def test_right_edge_last_move_stays_aligned(self) -> None:
+        state = GameState.new_game()
+        apply_play(state, "black", "J5")
+        rendered = render_text(state)
+        self.assertIn("  5 . . . . + . . .(X)5", rendered)
+        self.assert_board_rows_uniform_width(rendered)
 
     def test_no_parentheses_after_pass_and_stale_ko_removal(self) -> None:
         state = configure_position(
@@ -238,27 +260,54 @@ class RendererTests(unittest.TestCase):
         expected = (LEGACY_DIR / "game-example-manual-v1.txt").read_text(encoding="utf-8")
         self.assertEqual(rendered.rstrip("\n"), expected.rstrip("\n"))
 
+    def test_validate_rendered_text_rejects_misaligned_rows(self) -> None:
+        state = GameState.new_game()
+        apply_play(state, "black", "A5")
+        rendered = render_text(state)
+        broken = rendered.replace("  5(X). . . + . . . . 5", "  5 (X). . . + . . . . 5")
+        with self.assertRaisesRegex(ValueError, "uniformly aligned"):
+            validate_rendered_text(state, broken)
+
 
 class CliTests(unittest.TestCase):
+    def run_cli(self, cwd: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["python3", str(REPO_ROOT / "go_ref.py"), *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=check,
+        )
+
     def test_cli_json_stdout_and_error_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            cmd = ["python3", str(REPO_ROOT / "go_ref.py"), "init"]
-            init = subprocess.run(cmd, cwd=tmpdir, capture_output=True, text=True, check=True)
+            init = self.run_cli(tmpdir, "init")
             payload = json.loads(init.stdout)
             self.assertTrue(payload["ok"])
             self.assertEqual(init.stderr, "")
 
-            illegal = subprocess.run(
-                ["python3", str(REPO_ROOT / "go_ref.py"), "play", "--color", "white", "--move", "E5"],
-                cwd=tmpdir,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            illegal = self.run_cli(tmpdir, "play", "--color", "white", "--move", "E5", check=False)
             self.assertEqual(illegal.returncode, 1)
             error_payload = json.loads(illegal.stdout)
             self.assertFalse(error_payload["ok"])
             self.assertIn("turn", illegal.stderr)
+
+    def test_cli_renderer_regression_fixtures(self) -> None:
+        scenarios = [
+            ("a5_last_move", [("black", "A5")]),
+            ("a7_last_move", [("black", "A7")]),
+            ("e5_last_move", [("black", "E5")]),
+            ("j5_last_move", [("black", "J5")]),
+        ]
+        for fixture_name, moves in scenarios:
+            with self.subTest(fixture=fixture_name):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    self.run_cli(tmpdir, "init")
+                    for color, move in moves:
+                        self.run_cli(tmpdir, "play", "--color", color, "--move", move)
+                    rendered = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+                    expected = (FIXTURES_DIR / f"{fixture_name}.txt").read_text(encoding="utf-8")
+                    self.assertEqual(rendered.rstrip("\n"), expected.rstrip("\n"))
 
 
 if __name__ == "__main__":

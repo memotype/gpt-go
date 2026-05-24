@@ -11,6 +11,7 @@ When starting a fresh session, read these files first:
 - [render.py](./render.py)
 - [models.py](./models.py)
 - [tests/test_go_ref.py](./tests/test_go_ref.py)
+- [tests/fixtures/renderer](./tests/fixtures/renderer)
 
 Legacy manual-play artifacts are preserved under [docs/legacy-ascii](./docs/legacy-ascii). They are historical references and renderer regression fixtures, not the live workflow.
 
@@ -72,11 +73,16 @@ python3 go_ref.py validate
   - Behavioral safety net.
   - Includes rules tests, renderer regressions, and CLI contract checks.
 
+- `tests/fixtures/renderer`
+  - Canonical `game.txt` examples used by the renderer regression harness.
+  - Helpful when a change should be verified through the CLI end-to-end rather than by inspecting `render_text()` alone.
+
 ## Expectations for Changes
 
 - If you add or change a command, update `README.md`.
 - If you change rules behavior, add or update tests for the exact edge case.
 - If you change rendering, compare against the archived manual examples and keep regression coverage.
+  - Prefer adding or updating a fixture under `tests/fixtures/renderer` when the exact `game.txt` output is part of the contract.
 - If you change JSON shape, keep backward compatibility in mind or bump schema expectations deliberately.
 
 ## Type Checking Notes

@@ -10,7 +10,7 @@ The tool manages:
 - simple ko
 - pass and resignation
 - undo
-- a human-readable `game.txt`
+- a generated board view for humans
 
 The tool does not provide:
 - move recommendations
@@ -20,13 +20,14 @@ The tool does not provide:
 - ladder reading
 - territory or score estimation during play
 
-## Files You Use
+## Files
 
 - `state.json`
-  - Authoritative game state.
+  - Authoritative game state and the primary machine-readable interface.
 
 - `game.txt`
   - Generated board view for human inspection.
+  - Do not use this as the machine interface.
 
 You should treat `state.json` as the live truth and `game.txt` as a rendered view.
 
@@ -58,13 +59,11 @@ Typical play loop:
 python3 go_ref.py init
 ```
 
-2. Inspect the board:
+2. Inspect the current state:
 
 ```bash
 python3 go_ref.py show
 ```
-
-or open `game.txt` in your editor.
 
 3. Play moves through the referee:
 
@@ -93,8 +92,6 @@ Print the current state as JSON.
 python3 go_ref.py show
 ```
 
-Use this when a Codex session needs the exact structured state instead of visually reading `game.txt`.
-
 ### `play`
 
 Play a board move.
@@ -117,7 +114,7 @@ The tool will reject:
 - moves played out of turn
 - moves after the game is over
 
-After a legal move, the tool updates both `state.json` and `game.txt`.
+After a legal move, the tool updates the stored state and refreshes the rendered board view.
 
 ### `pass`
 
@@ -197,7 +194,7 @@ Regenerate `game.txt` from the current state.
 python3 go_ref.py render
 ```
 
-Use this if you want to refresh the human-readable board view without changing state.
+Use this to refresh the rendered board view without changing state.
 
 ### `undo`
 
@@ -213,7 +210,7 @@ Undo multiple moves:
 python3 go_ref.py undo --count 2
 ```
 
-This rewinds state and regenerates `game.txt`.
+This rewinds state and refreshes the rendered board view.
 
 ## Output Conventions
 
@@ -231,26 +228,6 @@ All commands are designed for tool-assisted use.
 
 This means a Codex session should read stdout for structured results and use stderr only for brief failure context.
 
-## Reading `game.txt`
-
-The rendered board uses:
-- `.` for empty intersections
-- `X` for Black
-- `O` for White
-- `+` for empty hoshi points
-- `~` for the current ko-forbidden point
-- `(X)` or `(O)` for the last board move
-
-It also shows:
-- move number
-- side to move
-- capture counts
-- ko status
-- last move
-- move log
-
-If the last move was pass or resignation, no board point is parenthesized.
-
 ## Recommended Codex Usage
 
 For a session that is actually playing a game:
@@ -259,10 +236,9 @@ For a session that is actually playing a game:
 - use `show` when structured state is needed
 - use `chain` and `legal` for mechanical referee questions
 - use `validate` if the session becomes unsure whether state is still consistent
-- look at `game.txt` for the board, not the script source
 
 Recommended discipline:
-- never update `game.txt` by hand
+- never update generated output such as `game.txt` by hand
 - do not infer legality from visual inspection alone when the tool can answer it directly
 - treat the referee as the source of truth for captures, ko, and liberties
 
@@ -283,32 +259,58 @@ python3 go_ref.py play --color white --move C3
 ```
 
 3. Before choosing Black's move:
-- inspect `game.txt` for the board view
 - use `python3 go_ref.py show` for structured state
 - use `python3 go_ref.py chain --point ...` for chain/liberty questions
 - use `python3 go_ref.py legal --color black --move ...` for legality checks
 
-4. After choosing Black's move, record it through the referee:
+4. Choose Black's move
+
+See the "Move Choice Discipline" section below.
+
+5. After choosing Black's move, record it through the referee:
 
 ```bash
 python3 go_ref.py play --color black --move E5
 ```
 
-5. If anything seems uncertain, run:
+6. If anything seems uncertain, run:
 
 ```bash
 python3 go_ref.py validate
 ```
 
-6. If a move must be rolled back, use `undo` rather than editing files directly:
+7. If a move must be rolled back, use `undo` rather than editing files directly:
 
 ```bash
 python3 go_ref.py undo
 ```
 
 The key rule is simple:
-- move choice may come from Codex
+- move choice must come from Codex
 - move legality and state transitions must come from the referee
+
+## Move Choice Discipline
+
+The referee answers mechanical questions. It does not choose moves. Before
+playing Black's move, Codex must choose deliberately.
+
+After recording White's move and before playing Black's reply:
+
+1. Use `show` to inspect the current board state.
+2. Identify Black's most urgent problem in one sentence.
+3. Identify 1-3 urgent White threats or Black weaknesses.
+4. Identify 2-3 plausible Black candidate moves, unless there is only one
+   clearly forcing move.
+5. For each serious candidate, read the most obvious White reply.
+6. Use referee commands only for mechanical questions:
+   - `show` for exact state
+   - `chain --point ...` for chains and liberties
+   - `legal --color black --move ...` for legality
+7. Reject any candidate that is immediately refuted by the obvious White reply.
+8. Play the candidate that best preserves a plausible continuation.
+
+Do not play the first legal move that comes to mind. Do not use `legal` as a
+move generator and then pick from the list casually. Legal does not mean good.
 
 ## Examples
 

@@ -35,29 +35,33 @@ def display_symbol(state: GameState, x: int, y: int) -> str:
     return stone_to_display(stone)
 
 
-def render_row(state: GameState, row_number: int) -> str:
-    y = BOARD_SIZE - row_number
+def render_cells(state: GameState, y: int) -> list[str]:
     cells: list[str] = []
-    last_index: int | None = None
     for x in range(BOARD_SIZE):
         coord = format_coord((x, y))
         symbol = display_symbol(state, x, y)
         if state.last_move is not None and state.last_move.kind == "play" and state.last_move.point == coord:
-            last_index = x
+            symbol = f"({symbol})"
         cells.append(symbol)
-    body = list(" ".join(cells))
-    if last_index is not None:
-        symbol_index = last_index * 2
-        if last_index == 0:
-            body.insert(0, "(")
-            symbol_index += 1
-        else:
-            body[symbol_index - 1] = "("
-        if last_index == BOARD_SIZE - 1:
-            body.append(")")
-        else:
-            body[symbol_index + 1] = ")"
-    return f"  {row_number} {''.join(body)} {row_number}"
+    return cells
+
+
+def join_render_cells(cells: list[str]) -> str:
+    body = cells[0]
+    for previous, current in zip(cells, cells[1:]):
+        if len(previous) == 1 and len(current) == 1:
+            body += " "
+        body += current
+    return body
+
+
+def render_row(state: GameState, row_number: int) -> str:
+    y = BOARD_SIZE - row_number
+    cells = render_cells(state, y)
+    body = join_render_cells(cells)
+    left_separator = "" if cells[0].startswith("(") else " "
+    right_separator = "" if cells[-1].endswith(")") else " "
+    return f"  {row_number}{left_separator}{body}{right_separator}{row_number}"
 
 
 def render_move_log(state: GameState) -> list[str]:
@@ -102,10 +106,13 @@ def validate_rendered_text(state: GameState, text: str) -> None:
     expected = 1 if state.last_move is not None and state.last_move.kind == "play" else 0
     if last_move_count != expected:
         raise ValueError("Rendered board has incorrect parenthesized last-move count")
+    row_lengths = {len(row) for row in board_rows}
+    if len(row_lengths) != 1:
+        raise ValueError("Rendered board rows are not uniformly aligned")
     for row_number in range(BOARD_SIZE, 0, -1):
-        marker = f"  {row_number} "
-        row = next(line for line in text.splitlines() if line.startswith(marker))
-        body = row[len(marker) : -len(f" {row_number}")]
+        row_prefix = f"  {row_number}"
+        row = next(line for line in text.splitlines() if line.startswith(row_prefix))
+        body = row[len(row_prefix) : -len(f"{row_number}")]
         cells = re.findall(r"\([XO]\)|[.XO+~]", body)
         if len(cells) != BOARD_SIZE:
             raise ValueError(f"Rendered row {row_number} does not contain 9 intersections")

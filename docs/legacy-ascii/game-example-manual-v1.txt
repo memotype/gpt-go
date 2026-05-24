@@ -1,0 +1,82 @@
+Board Size:   9
+Handicap      0
+Komi:         6.5
+Move Number:  57
+To Move:      White
+Ko:           none
+
+    White (O) has captured 8 pieces
+    Black (X) has captured 1 pieces
+
+    A B C D E F G H J        Last move: Black D9
+  9 . . .(X)O . O X . 9
+  8 . . . . . O . O . 8
+  7 . O + O O X O . . 7
+  6 X X O X X X . O . 6
+  5 X X O O X . X . . 5
+  4 . O O X . X X O O 4
+  3 O X X X X O O . . 3
+  2 . O X O O . X O . 2
+  1 O . O . . . O . O 1
+    A B C D E F G H J
+
+MOVE LOG
+========
+
+1. E5
+2. G7
+3. G5
+4. E7
+5. F7
+6. F8
+7. F6
+8. F5
+9. F4
+10. G3
+11. G4
+12. F3
+13. E3
+14. E2
+15. D3
+16. C6
+17. D6
+18. D7
+19. E6
+20. C5
+21. B5
+22. C4
+23. D4
+24. D5
+25. C3
+26. B4
+27. B6
+28. B7
+29. A6
+30. D2
+31. C2
+32. B2
+33. B3
+34. C1
+35. B1
+36. A1
+37. A2
+38. A3
+39. A5
+40. H4
+41. H3
+42. H2
+43. J3
+44. J4
+45. J2
+46. J1
+47. H1
+48. G1
+49. G2
+50. H6
+51. G8
+52. H8
+53. H9
+54. G9
+55. F9
+56. E9
+57. D9

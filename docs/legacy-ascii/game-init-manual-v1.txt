@@ -1,19 +1,19 @@
 Board Size:   9
 Handicap      0
 Komi:         6.5
-Move Number:  1
-To Move:      White
+Move Number:  0
+To Move:      Black
 Ko:           none
 
     White (O) has captured 0 pieces
     Black (X) has captured 0 pieces
 
-    A B C D E F G H J        Last move: Black E5
+    A B C D E F G H J
   9 . . . . . . . . . 9
   8 . . . . . . . . . 8
   7 . . + . . . + . . 7
   6 . . . . . . . . . 6
-  5 . . . .(X). . . . 5
+  5 . . . . + . . . . 5
   4 . . . . . . . . . 4
   3 . . + . . . + . . 3
   2 . . . . . . . . . 2
@@ -23,4 +23,4 @@ Ko:           none
 MOVE LOG
 ========
 
-1. E5
+1.

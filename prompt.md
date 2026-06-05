@@ -1,4 +1,4 @@
-# Init prompt
+# Game Prompt
 
 Let's play a 9x9 game of Go. I play White and you play Black.
 
@@ -83,6 +83,12 @@ Before every serious Black move:
 - consider serious candidate moves when the position is nontrivial
 - use tactical tools to investigate uncertain candidates
 - use a branch if one short hypothetical read is not enough
+- treat liberty count, connection, and legality as evidence, not proof that a
+  move is good
+- if White ignores a candidate, check what Black concretely gains
+- if White answers with the strongest obvious reply, check what Black still has
+- before reinforcing a group, prove the move does more than add connected
+  stones
 - reject moves that fail tactically
 - choose your move only after enough analysis to justify it
 
@@ -131,3 +137,6 @@ When beginning a new game:
 2. Inspect the starting state.
 3. Choose and record Black's first move through the CLI.
 4. Report the move and ask for White's reply.
+
+This file is intended to be the single copy-pasteable prompt for starting a
+new session.

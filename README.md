@@ -234,7 +234,7 @@ Use `query` when Codex wants verified local facts such as:
 - which chains are adjacent to a group
 - which groups are currently in atari
 - how an empty region is bordered
-- which side is weak right now
+- which chains are low on liberties
 
 ### `try`
 
@@ -394,7 +394,7 @@ before considering the change complete.
 
 Use the tools intentionally:
 
-- “What is weak right now?” → `query board`
+- “What factual pressure points exist right now?” → `query board`
 - “How many liberties does this group have?” → `chain` or `query chain`
 - “Is this cut or connection tactically sound?” → `query point` + `try play`
 - “What happens in the next 2-5 forcing moves?” → `try sequence`
@@ -470,6 +470,10 @@ The key rule is simple:
 Before every serious Black move, Codex should analyze enough to justify the
 move it chooses.
 
+Tool output is evidence, not a verdict. Do not choose a move mainly because it
+is legal, increases a liberty count, connects stones, or avoids immediate
+self-atari.
+
 A good default loop is:
 
 1. Inspect the canonical position with `show` or `query board`.
@@ -483,6 +487,22 @@ A good default loop is:
 5. If short tactical checks are not enough, continue reading in a branch.
 6. Reject moves that fail tactically.
 7. Play the move you judge strongest after analysis.
+
+Before committing to a serious candidate, ask:
+
+1. What concrete problem does this move address?
+2. If White ignores it, what concrete follow-up or gain does Black have?
+3. What is White's strongest obvious reply?
+4. After that reply, does Black still have a plausible continuation?
+5. If the move reinforces an existing group, does it create new outside
+   possibilities, or only add more connected stones?
+
+Reject candidates that look mechanically tidy but do not change the position in
+a useful way.
+
+Compact guardrail:
+- Before playing a reinforcing move, prove it does more than increase local
+  connectedness.
 
 Do not play the first legal move that comes to mind, but do not treat this as
 an inflexible script either.

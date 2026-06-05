@@ -31,6 +31,8 @@ references and renderer regression fixtures, not the live workflow.
   - Not allowed: move recommendation, candidate ranking, life/death
     judgment, ladder reading, score estimation, territory estimation,
     strategy.
+  - Candidate-audit guidance belongs to Codex's reasoning discipline and repo
+    prompts, not to referee behavior or CLI output.
 - Keep stdout machine-readable JSON for CLI commands.
 - Keep human-oriented diagnostics on stderr.
 - Prefer small, explicit data-model changes over clever inference-heavy

@@ -52,7 +52,7 @@ If I enter an illegal White move:
 - briefly tell me the move is illegal and why
 - ask for another White move
 
-After you play a Black move:
+After you have decided on and submitted a final Black move via the referee:
 - stop
 - report the move clearly
 - ask for my White move
@@ -80,7 +80,10 @@ Never confuse branch outcomes with the canonical game state.
 Before every serious Black move:
 
 - inspect the canonical position with `show` or `query board`
-- consider serious candidate moves when the position is nontrivial
+- on 9x9, do not treat ordinary-looking moves as routine
+- assume each Black move needs a short adversarial read unless it is clearly
+  forced, a pass, or a resignation
+- consider serious candidate moves unless the move is clearly forced
 - use tactical tools to investigate uncertain candidates
 - use a branch if one short hypothetical read is not enough
 - treat liberty count, connection, and legality as evidence, not proof that a
@@ -91,6 +94,42 @@ Before every serious Black move:
   stones
 - reject moves that fail tactically
 - choose your move only after enough analysis to justify it
+
+When the local position is sharp:
+
+- do not trust a candidate just because one short line looks good
+- read at least the two strongest obvious White replies to a tightening move
+- if White just played a small-looking move, re-check the whole-board urgency
+  before answering locally
+- prefer moves that keep multiple forcing follow-ups over moves that only take
+  one liberty or make shape look tidy
+- if more than one forcing continuation still looks plausible after short reads,
+  switch to a branch before playing the real move
+
+Mandatory adversarial read for each serious candidate:
+
+1. State the candidate's intended purpose.
+2. Use `try play` or `try sequence` to verify its immediate consequences.
+3. Choose at least one strong White reply that tries to refute it.
+4. Read at least one Black continuation after that reply.
+5. Reject the candidate if the adversarial line leaves Black with no concrete
+   gain or plausible continuation.
+
+If the candidate mainly reinforces, connects, cleans up shape, or increases
+liberties, this adversarial read is mandatory.
+
+If one short sequence is not enough to understand the result, create a branch
+and continue reading there before playing the canonical move.
+
+Final blunder check before recording Black's move:
+
+- What is White's strongest obvious reply?
+- If White ignores the move, what did Black concretely gain?
+- If the move mainly reinforces or connects, did it do more than add mass?
+- Was the move tested with `try` or branch reading unless it is clearly forced,
+  a pass, or a resignation?
+
+Do not record the move until it passes this check.
 
 ## Branch Usage
 

@@ -416,7 +416,7 @@ For a session that is actually playing a game:
 - use `play`, `pass`, and `resign` to change the real game
 - use `show`, `query`, and `chain` for verified state
 - use `try` for short tactical verification
-- use `branch` when deeper reading is needed
+- use `branch` when short tactical reading is not enough
 - use `validate` if state consistency is ever in doubt
 
 Recommended discipline:
@@ -474,11 +474,17 @@ Tool output is evidence, not a verdict. Do not choose a move mainly because it
 is legal, increases a liberty count, connects stones, or avoids immediate
 self-atari.
 
+On a 9x9 board, ordinary-looking moves should not be treated as routine. Space
+is small, so connection, liberty, territory, and life-and-death consequences
+are usually coupled. The default assumption should be that each Black move
+needs at least a short adversarial read unless the move is clearly forced, a
+pass, or a resignation.
+
 A good default loop is:
 
 1. Inspect the canonical position with `show` or `query board`.
 2. Consider the most serious problems or opportunities in the position.
-3. When the position is nontrivial, compare more than one serious move.
+3. Compare more than one serious move unless the move is clearly forced.
 4. Use the tools that fit the question:
    - `query point` for local tactical facts
    - `query chain` for group status and neighboring pressure
@@ -498,7 +504,47 @@ Before committing to a serious candidate, ask:
    possibilities, or only add more connected stones?
 
 Reject candidates that look mechanically tidy but do not change the position in
-a useful way.
+a useful way. The referee verifies mechanics only; Codex must judge whether the
+move is actually good.
+
+Extra guardrails for sharp local fights:
+
+1. If the candidate is a tightening move in contact play, do not stop after one
+   friendly continuation. Read at least the two strongest obvious White replies.
+2. If White's last move looks small or slow, do not assume the best Black move
+   is nearby. Re-check whether there is a stronger forcing punishment elsewhere
+   on the board or a more severe local move in the same area.
+3. If multiple forcing continuations remain plausible after short `try`
+   sequences, escalate to a branch before committing the canonical move.
+4. Prefer the move that preserves multiple forcing follow-ups over a move that
+   merely removes one liberty or makes the shape look neat.
+
+Mandatory adversarial read:
+
+1. State the candidate's intended purpose.
+2. Use `try play` or `try sequence` to verify its immediate mechanical
+   consequences.
+3. Choose at least one strong White reply that tries to refute it.
+4. Read at least one Black continuation after that reply.
+5. Reject the candidate if that adversarial line leaves Black with no concrete
+   gain or plausible continuation.
+
+This adversarial read is mandatory for moves that are mainly reinforcing,
+connecting, shape-cleaning, or liberty-increasing. On 9x9, this short
+adversarial read is the default for Black moves, not a special escalation step,
+unless the move is clearly forced, a pass, or a resignation. If one short
+`try sequence` is not enough to understand the result, create a branch and
+continue reading there before playing the real move.
+
+Final blunder check before recording Black's move:
+
+1. What is White's strongest obvious reply?
+2. If White ignores the move, what did Black concretely gain?
+3. If the move mainly reinforces or connects, did it do more than add mass?
+4. Was the move tested with `try` or branch reading unless it is clearly
+   forced, a pass, or a resignation?
+
+Do not record the move until it passes this check.
 
 Compact guardrail:
 - Before playing a reinforcing move, prove it does more than increase local

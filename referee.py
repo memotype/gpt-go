@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from models import (
     BOARD_SIZE,
@@ -44,6 +44,16 @@ class PlayResult:
     ko_point: Coord | None
     status: str
     state: dict[str, Any]
+
+
+SequenceActionKind = Literal["play", "pass", "resign"]
+
+
+@dataclass(slots=True)
+class SequenceStep:
+    color: Color
+    kind: SequenceActionKind
+    move: Coord | None
 
 
 def other_color(color: Color) -> Color:
@@ -106,6 +116,10 @@ def set_stone(board: list[list[Stone]], point: Point, stone: Stone) -> None:
     board[y][x] = stone
 
 
+def clone_state(state: GameState) -> GameState:
+    return GameState.from_dict(state.to_dict())
+
+
 def chain_info(board: list[list[Stone]], point: Point) -> ChainInfo:
     stone = get_stone(board, point)
     if stone == "empty":
@@ -125,6 +139,74 @@ def chain_info(board: list[list[Stone]], point: Point) -> ChainInfo:
             elif neighbor_stone == "empty":
                 liberties.add(neighbor)
     return ChainInfo(stones=stones, liberties=liberties)
+
+
+def chain_anchor(stones: set[Point]) -> Coord:
+    return min(format_coord(point) for point in stones)
+
+
+def chain_payload(board: list[list[Stone]], info: ChainInfo) -> dict[str, Any]:
+    return {
+        "color": get_stone(board, next(iter(info.stones))),
+        "stones": sorted(format_coord(item) for item in info.stones),
+        "liberties": sorted(format_coord(item) for item in info.liberties),
+        "liberty_count": len(info.liberties),
+        "in_atari": len(info.liberties) == 1,
+        "anchor": chain_anchor(info.stones),
+    }
+
+
+def enumerate_chains(board: list[list[Stone]]) -> list[dict[str, Any]]:
+    seen: set[Point] = set()
+    chains: list[dict[str, Any]] = []
+    for y in range(BOARD_SIZE):
+        for x in range(BOARD_SIZE):
+            point = (x, y)
+            stone = get_stone(board, point)
+            if stone == "empty" or point in seen:
+                continue
+            info = chain_info(board, point)
+            seen.update(info.stones)
+            payload = chain_payload(board, info)
+            chains.append(payload)
+    return chains
+
+
+def enumerate_empty_regions(board: list[list[Stone]]) -> list[dict[str, Any]]:
+    seen: set[Point] = set()
+    regions: list[dict[str, Any]] = []
+    for y in range(BOARD_SIZE):
+        for x in range(BOARD_SIZE):
+            point = (x, y)
+            if point in seen or get_stone(board, point) != "empty":
+                continue
+            region_points: set[Point] = set()
+            bordering_colors: set[Color] = set()
+            bordering_chain_anchors: set[Coord] = set()
+            stack = [point]
+            while stack:
+                current = stack.pop()
+                if current in region_points:
+                    continue
+                region_points.add(current)
+                seen.add(current)
+                for neighbor in neighbors(current):
+                    neighbor_stone = get_stone(board, neighbor)
+                    if neighbor_stone == "empty":
+                        if neighbor not in region_points:
+                            stack.append(neighbor)
+                        continue
+                    bordering_colors.add(neighbor_stone)
+                    bordering_chain_anchors.add(chain_anchor(chain_info(board, neighbor).stones))
+            regions.append(
+                {
+                    "points": sorted(format_coord(item) for item in region_points),
+                    "bordering_colors": sorted(bordering_colors),
+                    "bordering_chain_anchors": sorted(bordering_chain_anchors),
+                }
+            )
+    regions.sort(key=lambda region: region["points"])
+    return regions
 
 
 def position_hash(state: GameState) -> str:
@@ -344,6 +426,181 @@ def list_legal_moves(state: GameState, color: Color) -> list[Coord]:
     return legal_moves
 
 
+def explain_move_legality(state: GameState, color: Color, move: Coord, *, ignore_turn: bool = False) -> dict[str, Any]:
+    text = move.upper()
+    point = parse_coord(text)
+    analysis_state = clone_state(state)
+    if ignore_turn:
+        analysis_state.side_to_move = color
+        if analysis_state.status in {"resigned", "game_over"}:
+            analysis_state.status = "active"
+    occupied = get_stone(analysis_state.board, point) != "empty"
+    legal, reason = is_move_legal(analysis_state, color, text)
+    result: dict[str, Any] = {
+        "point": text,
+        "legal": legal,
+        "reason": reason,
+        "occupied": occupied,
+        "ko_point": analysis_state.ko_point,
+        "would_capture": [],
+        "would_be_suicide": False,
+        "resulting_liberty_count": None,
+        "adjacent_enemy_chains_after_capture": [],
+    }
+    if occupied:
+        return result
+
+    board = board_copy(analysis_state.board)
+    set_stone(board, point, color_to_stone(color))
+    captured_points = find_captures_after_play(board, point, color)
+    for captured_point in captured_points:
+        set_stone(board, captured_point, "empty")
+    result["would_capture"] = sorted(format_coord(item) for item in captured_points)
+    try:
+        info = chain_info(board, point)
+    except RefereeError:
+        info = None
+    if info is not None:
+        result["resulting_liberty_count"] = len(info.liberties)
+        result["would_be_suicide"] = len(info.liberties) == 0
+    adjacent_enemy: list[dict[str, Any]] = []
+    seen_enemy_anchors: set[Coord] = set()
+    for neighbor in neighbors(point):
+        if get_stone(board, neighbor) != other_color(color):
+            continue
+        payload = chain_payload(board, chain_info(board, neighbor))
+        if payload["anchor"] in seen_enemy_anchors:
+            continue
+        seen_enemy_anchors.add(payload["anchor"])
+        adjacent_enemy.append(
+            {
+                "anchor": payload["anchor"],
+                "stones": payload["stones"],
+                "liberties": payload["liberties"],
+                "liberty_count": payload["liberty_count"],
+            }
+        )
+    adjacent_enemy.sort(key=lambda item: item["anchor"])
+    result["adjacent_enemy_chains_after_capture"] = adjacent_enemy
+    return result
+
+
+def simulate_play(state: GameState, color: Color, move: Coord) -> dict[str, Any]:
+    analysis = explain_move_legality(state, color, move)
+    result: dict[str, Any] = {
+        "color": color,
+        "move": move.upper(),
+        "legal": analysis["legal"],
+        "reason": analysis["reason"],
+    }
+    if not analysis["legal"]:
+        return result
+    simulated = clone_state(state)
+    apply_result = apply_play(simulated, color, move.upper())
+    played_point = parse_coord(move.upper())
+    played_chain = chain_info(simulated.board, played_point)
+    result.update(
+        {
+            "captures": apply_result.captures,
+            "capture_count_delta": apply_result.capture_count_delta,
+            "ko_point_after": apply_result.ko_point,
+            "result_state": state_summary(simulated),
+            "played_chain": {
+                "stones": sorted(format_coord(item) for item in played_chain.stones),
+                "liberties": sorted(format_coord(item) for item in played_chain.liberties),
+                "liberty_count": len(played_chain.liberties),
+            },
+            "board_diff": {
+                "placed": [move.upper()],
+                "removed": apply_result.captures,
+                "changed_points": sorted([move.upper(), *apply_result.captures]),
+            },
+        }
+    )
+    return result
+
+
+def parse_sequence_steps(spec: str, *, max_steps: int = 20) -> list[SequenceStep]:
+    if not spec.strip():
+        raise RefereeError("invalid_sequence", "Sequence must not be empty")
+    raw_steps = [item.strip() for item in spec.split(",") if item.strip()]
+    if len(raw_steps) > max_steps:
+        raise RefereeError(
+            "invalid_sequence",
+            f"Sequence exceeds maximum length of {max_steps}",
+            {"max_steps": max_steps, "count": len(raw_steps)},
+        )
+    steps: list[SequenceStep] = []
+    for raw_step in raw_steps:
+        if ":" not in raw_step:
+            raise RefereeError("invalid_sequence", f"Invalid sequence token: {raw_step}", {"token": raw_step})
+        color_code, action_text = raw_step.split(":", 1)
+        color_key = color_code.strip().upper()
+        action = action_text.strip().upper()
+        if color_key not in {"B", "W"}:
+            raise RefereeError("invalid_sequence", f"Invalid sequence token: {raw_step}", {"token": raw_step})
+        color: Color = "black" if color_key == "B" else "white"
+        if action == "PASS":
+            steps.append(SequenceStep(color=color, kind="pass", move=None))
+        elif action == "RESIGN":
+            steps.append(SequenceStep(color=color, kind="resign", move=None))
+        else:
+            parse_coord(action)
+            steps.append(SequenceStep(color=color, kind="play", move=action))
+    return steps
+
+
+def simulate_sequence(state: GameState, spec: str) -> dict[str, Any]:
+    simulated = clone_state(state)
+    steps = parse_sequence_steps(spec)
+    applied: list[dict[str, Any]] = []
+    stopped_early = False
+    stop_reason: str | None = None
+    for index, step in enumerate(steps, start=1):
+        try:
+            captures: list[Coord] = []
+            if step.kind == "play":
+                play_result = apply_play(simulated, step.color, step.move or "")
+                captures = play_result.captures
+            elif step.kind == "pass":
+                apply_pass(simulated, step.color)
+            else:
+                apply_resign(simulated, step.color)
+            applied.append(
+                {
+                    "index": index,
+                    "color": step.color,
+                    "kind": step.kind,
+                    "move": step.move,
+                    "legal": True,
+                    "reason": None,
+                    "captures": captures,
+                }
+            )
+        except RefereeError as exc:
+            applied.append(
+                {
+                    "index": index,
+                    "color": step.color,
+                    "kind": step.kind,
+                    "move": step.move,
+                    "legal": False,
+                    "reason": exc.code,
+                    "captures": [],
+                }
+            )
+            stopped_early = True
+            stop_reason = exc.code
+            break
+    return {
+        "applied": applied,
+        "stopped_early": stopped_early,
+        "stop_reason": stop_reason,
+        "final_state": state_summary(simulated),
+        "final_chains": query_board(simulated)["chains"],
+    }
+
+
 def apply_play(state: GameState, color: Color, move: Coord) -> PlayResult:
     ensure_active_turn(state, color)
     point = parse_coord(move)
@@ -466,6 +723,160 @@ def chain_at(state: GameState, coord: Coord) -> dict[str, Any]:
         "chain": sorted(format_coord(item) for item in info.stones),
         "liberties": sorted(format_coord(item) for item in info.liberties),
         "liberty_count": len(info.liberties),
+    }
+
+
+def query_point(state: GameState, coord: Coord) -> dict[str, Any]:
+    point = parse_coord(coord)
+    occupant = get_stone(state.board, point)
+    neighbor_points = neighbors(point)
+    neighbor_coords = [format_coord(item) for item in neighbor_points]
+    if occupant == "empty":
+        friendly_neighbors = {"black": [], "white": []}
+        enemy_neighbors = {"black": [], "white": []}
+        for color in ("black", "white"):
+            friendly_neighbors[color] = sorted(
+                format_coord(item) for item in neighbor_points if get_stone(state.board, item) == color
+            )
+            enemy_neighbors[color] = sorted(
+                format_coord(item) for item in neighbor_points if get_stone(state.board, item) == other_color(color)
+            )
+        chain = None
+    else:
+        info = chain_info(state.board, point)
+        chain = {
+            "color": occupant,
+            "stones": sorted(format_coord(item) for item in info.stones),
+            "liberties": sorted(format_coord(item) for item in info.liberties),
+            "liberty_count": len(info.liberties),
+            "in_atari": len(info.liberties) == 1,
+        }
+        friendly_neighbors = sorted(
+            format_coord(item) for item in neighbor_points if get_stone(state.board, item) == occupant
+        )
+        enemy_neighbors = sorted(
+            format_coord(item) for item in neighbor_points if get_stone(state.board, item) == other_color(occupant)
+        )
+    move_effects = {}
+    for color in ("black", "white"):
+        move_analysis = explain_move_legality(state, color, coord.upper(), ignore_turn=True)
+        move_effects[color] = {
+            "legal": move_analysis["legal"],
+            "reason": move_analysis["reason"],
+            "captures": move_analysis["would_capture"],
+            "self_atari": move_analysis["legal"] and move_analysis["resulting_liberty_count"] == 1,
+            "resulting_liberty_count": move_analysis["resulting_liberty_count"] if move_analysis["legal"] else None,
+            "ko_point_after": None,
+        }
+        if move_analysis["legal"]:
+            simulated = clone_state(state)
+            simulated.side_to_move = color
+            if simulated.status in {"resigned", "game_over"}:
+                simulated.status = "active"
+            apply_result = apply_play(simulated, color, coord.upper())
+            move_effects[color]["ko_point_after"] = apply_result.ko_point
+    payload: dict[str, Any] = {
+        "point": coord.upper(),
+        "occupant": occupant,
+        "neighbors": neighbor_coords,
+        "empty_neighbor_count": sum(1 for item in neighbor_points if get_stone(state.board, item) == "empty"),
+        "move_effects": move_effects,
+    }
+    if occupant == "empty":
+        payload["friendly_neighbors"] = friendly_neighbors
+        payload["enemy_neighbors"] = enemy_neighbors
+    else:
+        payload["friendly_neighbors"] = friendly_neighbors
+        payload["enemy_neighbors"] = enemy_neighbors
+        payload["chain"] = chain
+    return payload
+
+
+def query_chain(state: GameState, coord: Coord) -> dict[str, Any]:
+    base = chain_at(state, coord.upper())
+    if base["occupant"] == "empty":
+        base["in_atari"] = False
+        base["adjacent_enemy_chains"] = []
+        base["adjacent_friendly_chains"] = []
+        base["shared_liberties"] = {}
+        return base
+    point = parse_coord(coord.upper())
+    info = chain_info(state.board, point)
+    own_color = get_stone(state.board, point)
+    enemy_payloads: dict[Coord, dict[str, Any]] = {}
+    friendly_payloads: dict[Coord, dict[str, Any]] = {}
+    for stone in info.stones:
+        for neighbor in neighbors(stone):
+            stone_color = get_stone(state.board, neighbor)
+            if stone_color == "empty":
+                continue
+            neighbor_info = chain_info(state.board, neighbor)
+            anchor = chain_anchor(neighbor_info.stones)
+            if neighbor_info.stones == info.stones:
+                continue
+            payload = {
+                "stones": sorted(format_coord(item) for item in neighbor_info.stones),
+                "liberties": sorted(format_coord(item) for item in neighbor_info.liberties),
+                "liberty_count": len(neighbor_info.liberties),
+            }
+            if stone_color == own_color:
+                friendly_payloads[anchor] = payload
+            else:
+                enemy_payloads[anchor] = payload
+    shared_liberties = {
+        anchor: sorted(set(base["liberties"]).intersection(payload["liberties"]))
+        for anchor, payload in enemy_payloads.items()
+    }
+    base["in_atari"] = base["liberty_count"] == 1
+    base["adjacent_enemy_chains"] = [enemy_payloads[key] for key in sorted(enemy_payloads)]
+    base["adjacent_friendly_chains"] = [friendly_payloads[key] for key in sorted(friendly_payloads)]
+    base["shared_liberties"] = {key: shared_liberties[key] for key in sorted(shared_liberties)}
+    return base
+
+
+def query_board(state: GameState) -> dict[str, Any]:
+    chains = enumerate_chains(state.board)
+    compact_chains: list[dict[str, Any]] = []
+    black_in_atari: list[Coord] = []
+    white_in_atari: list[Coord] = []
+    for payload in chains:
+        anchor = payload["anchor"]
+        point = parse_coord(anchor)
+        info = chain_info(state.board, point)
+        adjacent_enemy_anchors: set[Coord] = set()
+        for stone in info.stones:
+            for neighbor in neighbors(stone):
+                if get_stone(state.board, neighbor) != other_color(payload["color"]):
+                    continue
+                adjacent_enemy_anchors.add(chain_anchor(chain_info(state.board, neighbor).stones))
+        compact = {
+            "color": payload["color"],
+            "stones": payload["stones"],
+            "anchor": anchor,
+            "liberties": payload["liberties"],
+            "liberty_count": payload["liberty_count"],
+            "in_atari": payload["in_atari"],
+            "adjacent_enemy_chain_anchors": sorted(adjacent_enemy_anchors),
+        }
+        compact_chains.append(compact)
+        if payload["color"] == "black" and payload["in_atari"]:
+            black_in_atari.append(anchor)
+        if payload["color"] == "white" and payload["in_atari"]:
+            white_in_atari.append(anchor)
+    compact_chains.sort(key=lambda item: (item["color"], item["liberty_count"], item["anchor"]))
+    return {
+        "side_to_move": state.side_to_move,
+        "status": state.status,
+        "ko_point": state.ko_point,
+        "capture_counts": state.capture_counts.to_dict(),
+        "chain_summary": {
+            "black_chain_count": sum(1 for item in compact_chains if item["color"] == "black"),
+            "white_chain_count": sum(1 for item in compact_chains if item["color"] == "white"),
+            "black_in_atari": sorted(black_in_atari),
+            "white_in_atari": sorted(white_in_atari),
+        },
+        "chains": compact_chains,
+        "empty_regions": enumerate_empty_regions(state.board),
     }
 
 

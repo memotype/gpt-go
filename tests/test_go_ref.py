@@ -12,10 +12,16 @@ from referee import (
     apply_play,
     apply_resign,
     chain_at,
+    explain_move_legality,
     is_move_legal,
     list_legal_moves,
     parse_coord,
+    query_board,
+    query_chain,
+    query_point,
     replay_move_log,
+    simulate_play,
+    simulate_sequence,
     undo,
     validate_state,
 )
@@ -204,6 +210,100 @@ class RefereeRulesTests(unittest.TestCase):
         self.assertEqual(legal_moves[0], "A9")
 
 
+class TacticalQueryTests(unittest.TestCase):
+    def test_query_point_on_empty_reports_move_effects_for_both_colors(self) -> None:
+        state = configure_position(
+            black_points=["B1", "A2", "B3", "C2"],
+            white_points=[],
+            side_to_move="white",
+        )
+        data = query_point(state, "B2")
+        self.assertEqual(data["occupant"], "empty")
+        self.assertEqual(data["empty_neighbor_count"], 0)
+        self.assertFalse(data["move_effects"]["white"]["legal"])
+        self.assertEqual(data["move_effects"]["white"]["reason"], "suicide")
+        self.assertTrue(data["move_effects"]["black"]["legal"])
+        self.assertEqual(data["move_effects"]["black"]["resulting_liberty_count"], 6)
+
+    def test_query_chain_reports_adjacencies_and_shared_liberties(self) -> None:
+        state = configure_position(
+            black_points=["D4", "D5"],
+            white_points=["C4", "E4", "D3"],
+            side_to_move="black",
+        )
+        data = query_chain(state, "D4")
+        self.assertEqual(data["chain"], ["D4", "D5"])
+        self.assertFalse(data["in_atari"])
+        self.assertEqual(len(data["adjacent_enemy_chains"]), 3)
+        self.assertEqual(sorted(data["shared_liberties"].keys()), ["C4", "D3", "E4"])
+        self.assertEqual(data["shared_liberties"]["D3"], [])
+
+    def test_query_board_summarizes_chains_and_empty_regions(self) -> None:
+        state = configure_position(
+            black_points=["A1", "A2", "J9"],
+            white_points=["B1", "J8"],
+            side_to_move="black",
+        )
+        data = query_board(state)
+        self.assertEqual(data["chain_summary"]["black_chain_count"], 2)
+        self.assertEqual(data["chain_summary"]["white_chain_count"], 2)
+        self.assertEqual(data["chains"][0]["anchor"], "J9")
+        self.assertTrue(data["empty_regions"])
+        self.assertIn("black", data["empty_regions"][0]["bordering_colors"])
+
+    def test_try_play_matches_capture_result_without_mutating_state(self) -> None:
+        state = configure_position(
+            black_points=["A2", "B1", "B3", "C1", "C3"],
+            white_points=["B2", "C2"],
+            side_to_move="black",
+        )
+        before = state.to_dict()
+        data = simulate_play(state, "black", "D2")
+        self.assertTrue(data["legal"])
+        self.assertEqual(data["captures"], ["B2", "C2"])
+        self.assertEqual(data["board_diff"]["changed_points"], ["B2", "C2", "D2"])
+        self.assertEqual(state.to_dict(), before)
+
+    def test_try_play_illegal_reports_reason(self) -> None:
+        state = configure_position(
+            black_points=["A2", "B1", "B3", "C2"],
+            white_points=[],
+            side_to_move="white",
+        )
+        data = simulate_play(state, "white", "B2")
+        self.assertFalse(data["legal"])
+        self.assertEqual(data["reason"], "suicide")
+
+    def test_try_legality_reports_local_evidence(self) -> None:
+        state = configure_position(
+            black_points=["A1", "A3", "B4", "C1", "C3", "D2"],
+            white_points=["A2", "B1", "B3", "C2"],
+            side_to_move="black",
+        )
+        data = explain_move_legality(state, "black", "B2")
+        self.assertTrue(data["legal"])
+        self.assertEqual(data["would_capture"], ["A2", "B1", "B3", "C2"])
+        self.assertFalse(data["would_be_suicide"])
+        self.assertEqual(data["resulting_liberty_count"], 4)
+
+    def test_try_sequence_stops_on_first_illegal_step(self) -> None:
+        state = GameState.new_game()
+        data = simulate_sequence(state, "B:E5,W:E5,B:D5")
+        self.assertTrue(data["stopped_early"])
+        self.assertEqual(data["stop_reason"], "illegal_move")
+        self.assertEqual(len(data["applied"]), 2)
+        self.assertTrue(data["applied"][0]["legal"])
+        self.assertFalse(data["applied"][1]["legal"])
+        self.assertEqual(data["final_state"]["move_number"], 1)
+
+    def test_try_sequence_supports_pass_and_resign(self) -> None:
+        state = GameState.new_game()
+        data = simulate_sequence(state, "B:pass,W:resign")
+        self.assertFalse(data["stopped_early"])
+        self.assertEqual(data["final_state"]["status"], "resigned")
+        self.assertEqual(data["final_state"]["move_number"], 2)
+
+
 class RendererTests(unittest.TestCase):
     def assert_board_rows_uniform_width(self, rendered: str) -> None:
         board_rows = [line for line in rendered.splitlines() if line.startswith("  ") and line[2:3].isdigit()]
@@ -308,6 +408,172 @@ class CliTests(unittest.TestCase):
                     rendered = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
                     expected = (FIXTURES_DIR / f"{fixture_name}.txt").read_text(encoding="utf-8")
                     self.assertEqual(rendered.rstrip("\n"), expected.rstrip("\n"))
+
+    def test_cli_query_and_try_commands_return_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+            self.run_cli(tmpdir, "play", "--color", "black", "--move", "E5")
+            point_payload = json.loads(self.run_cli(tmpdir, "query", "point", "--point", "E4").stdout)
+            self.assertTrue(point_payload["ok"])
+            self.assertEqual(point_payload["result"]["point"], "E4")
+
+            chain_payload = json.loads(self.run_cli(tmpdir, "query", "chain", "--point", "E5").stdout)
+            self.assertTrue(chain_payload["ok"])
+            self.assertEqual(chain_payload["result"]["occupant"], "black")
+
+            board_payload = json.loads(self.run_cli(tmpdir, "query", "board").stdout)
+            self.assertTrue(board_payload["ok"])
+            self.assertIn("chains", board_payload["result"])
+
+            try_play_payload = json.loads(
+                self.run_cli(tmpdir, "try", "play", "--color", "white", "--move", "D5").stdout
+            )
+            self.assertTrue(try_play_payload["ok"])
+            self.assertTrue(try_play_payload["result"]["legal"])
+
+            try_legality_payload = json.loads(
+                self.run_cli(tmpdir, "try", "legality", "--color", "white", "--move", "E5").stdout
+            )
+            self.assertTrue(try_legality_payload["ok"])
+            self.assertFalse(try_legality_payload["result"]["legal"])
+
+            try_sequence_payload = json.loads(
+                self.run_cli(tmpdir, "try", "sequence", "--moves", "W:D5,B:C3").stdout
+            )
+            self.assertTrue(try_sequence_payload["ok"])
+            self.assertFalse(try_sequence_payload["result"]["stopped_early"])
+
+    def test_cli_query_and_try_do_not_mutate_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+            self.run_cli(tmpdir, "play", "--color", "black", "--move", "E5")
+            state_before = Path(tmpdir, "state.json").read_text(encoding="utf-8")
+            game_before = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+
+            commands = [
+                ("query", "point", "--point", "E4"),
+                ("query", "chain", "--point", "E5"),
+                ("query", "board"),
+                ("try", "play", "--color", "white", "--move", "D5"),
+                ("try", "legality", "--color", "white", "--move", "E5"),
+                ("try", "sequence", "--moves", "W:D5,B:C3"),
+            ]
+            for command in commands:
+                with self.subTest(command=command):
+                    self.run_cli(tmpdir, *command)
+                    self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), state_before)
+                    self.assertEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), game_before)
+
+    def test_branch_lifecycle_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+            self.run_cli(tmpdir, "play", "--color", "black", "--move", "E5")
+
+            created = json.loads(self.run_cli(tmpdir, "branch", "create", "--name", "semeai-1").stdout)
+            self.assertTrue(created["ok"])
+            self.assertEqual(created["result"]["name"], "semeai-1")
+            self.assertEqual(created["result"]["source"], {"kind": "canonical", "branch_name": None})
+            self.assertTrue(created["state_path"].endswith("analysis/branches/semeai-1/state.json"))
+            self.assertTrue(created["game_path"].endswith("analysis/branches/semeai-1/game.txt"))
+
+            listed = json.loads(self.run_cli(tmpdir, "branch", "list").stdout)
+            self.assertTrue(listed["ok"])
+            self.assertEqual([branch["name"] for branch in listed["result"]["branches"]], ["semeai-1"])
+
+            shown = json.loads(self.run_cli(tmpdir, "branch", "show", "--name", "semeai-1").stdout)
+            self.assertTrue(shown["ok"])
+            self.assertEqual(shown["result"]["state"]["move_number"], 1)
+
+            child = json.loads(
+                self.run_cli(tmpdir, "branch", "create", "--name", "ko-read", "--from-branch", "semeai-1").stdout
+            )
+            self.assertTrue(child["ok"])
+            self.assertEqual(child["result"]["source"], {"kind": "branch", "branch_name": "semeai-1"})
+
+            deleted = json.loads(self.run_cli(tmpdir, "branch", "delete", "--name", "ko-read").stdout)
+            self.assertTrue(deleted["ok"])
+            self.assertEqual(deleted["result"]["name"], "ko-read")
+            self.assertFalse(Path(tmpdir, "analysis/branches/ko-read").exists())
+
+    def test_branch_targeted_play_show_query_and_try_are_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+            self.run_cli(tmpdir, "play", "--color", "black", "--move", "E5")
+            self.run_cli(tmpdir, "branch", "create", "--name", "center")
+
+            canonical_state_before = Path(tmpdir, "state.json").read_text(encoding="utf-8")
+            canonical_game_before = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+
+            played = json.loads(
+                self.run_cli(tmpdir, "play", "--branch", "center", "--color", "white", "--move", "D5").stdout
+            )
+            self.assertTrue(played["ok"])
+            self.assertTrue(played["state_path"].endswith("analysis/branches/center/state.json"))
+
+            branch_show = json.loads(self.run_cli(tmpdir, "show", "--branch", "center").stdout)
+            self.assertEqual(branch_show["result"]["state"]["move_number"], 2)
+
+            canonical_show = json.loads(self.run_cli(tmpdir, "show").stdout)
+            self.assertEqual(canonical_show["result"]["state"]["move_number"], 1)
+
+            branch_query = json.loads(self.run_cli(tmpdir, "query", "board", "--branch", "center").stdout)
+            self.assertTrue(branch_query["ok"])
+            self.assertEqual(branch_query["result"]["side_to_move"], "black")
+
+            branch_try = json.loads(
+                self.run_cli(tmpdir, "try", "sequence", "--branch", "center", "--moves", "B:C3,W:C4").stdout
+            )
+            self.assertTrue(branch_try["ok"])
+            self.assertEqual(branch_try["result"]["final_state"]["move_number"], 4)
+
+            self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), canonical_state_before)
+            self.assertEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), canonical_game_before)
+
+    def test_branch_reset_and_undo_only_affect_target_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+            self.run_cli(tmpdir, "play", "--color", "black", "--move", "E5")
+            self.run_cli(tmpdir, "branch", "create", "--name", "a")
+            self.run_cli(tmpdir, "branch", "create", "--name", "b")
+            self.run_cli(tmpdir, "play", "--branch", "a", "--color", "white", "--move", "D5")
+            self.run_cli(tmpdir, "play", "--branch", "b", "--color", "white", "--move", "C3")
+
+            self.run_cli(tmpdir, "undo", "--branch", "a")
+            shown_a = json.loads(self.run_cli(tmpdir, "show", "--branch", "a").stdout)
+            shown_b = json.loads(self.run_cli(tmpdir, "show", "--branch", "b").stdout)
+            shown_canonical = json.loads(self.run_cli(tmpdir, "show").stdout)
+            self.assertEqual(shown_a["result"]["state"]["move_number"], 1)
+            self.assertEqual(shown_b["result"]["state"]["move_number"], 2)
+            self.assertEqual(shown_canonical["result"]["state"]["move_number"], 1)
+
+            self.run_cli(tmpdir, "branch", "reset", "--name", "b", "--from", "branch", "--source", "a")
+            reset_b = json.loads(self.run_cli(tmpdir, "show", "--branch", "b").stdout)
+            self.assertEqual(reset_b["result"]["state"]["move_number"], 1)
+
+            self.run_cli(tmpdir, "branch", "reset", "--name", "a", "--from", "canonical")
+            reset_a = json.loads(self.run_cli(tmpdir, "show", "--branch", "a").stdout)
+            self.assertEqual(reset_a["result"]["state"]["move_number"], 1)
+
+    def test_branch_invalid_and_missing_cases_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+
+            invalid = self.run_cli(tmpdir, "branch", "create", "--name", "Bad Name", check=False)
+            self.assertEqual(invalid.returncode, 1)
+            self.assertFalse(json.loads(invalid.stdout)["ok"])
+
+            self.run_cli(tmpdir, "branch", "create", "--name", "readout")
+            duplicate = self.run_cli(tmpdir, "branch", "create", "--name", "readout", check=False)
+            self.assertEqual(duplicate.returncode, 1)
+            self.assertFalse(json.loads(duplicate.stdout)["ok"])
+
+            missing_show = self.run_cli(tmpdir, "branch", "show", "--name", "missing", check=False)
+            self.assertEqual(missing_show.returncode, 1)
+            self.assertFalse(json.loads(missing_show.stdout)["ok"])
+
+            missing_delete = self.run_cli(tmpdir, "branch", "delete", "--name", "missing", check=False)
+            self.assertEqual(missing_delete.returncode, 1)
+            self.assertFalse(json.loads(missing_delete.stdout)["ok"])
 
 
 if __name__ == "__main__":

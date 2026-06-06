@@ -121,5 +121,8 @@ def validate_rendered_text(state: GameState, text: str) -> None:
 def render_to_path(state: GameState, path: Path) -> str:
     text = render_text(state)
     validate_rendered_text(state, text)
-    path.write_text(text, encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    tmp_path.replace(path)
     return text

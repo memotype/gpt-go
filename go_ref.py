@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import json
 import re
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Iterator, cast
 
 from models import Color, GameState
 from referee import (
@@ -132,6 +134,35 @@ def save_target_state(target: Target, state: GameState) -> None:
 def render_target(target: Target, state: GameState) -> None:
     target.game_path.parent.mkdir(parents=True, exist_ok=True)
     render_to_path(state, target.game_path)
+
+
+def lock_path_for_target(target: Target) -> Path:
+    if target.kind == "canonical":
+        return target.state_path.with_name(f".{target.state_path.name}.lock")
+    branch_name = target.name or "branch"
+    BRANCHES_ROOT.mkdir(parents=True, exist_ok=True)
+    return BRANCHES_ROOT / f".{branch_name}.lock"
+
+
+@contextlib.contextmanager
+def locked_targets(*targets: Target) -> Iterator[None]:
+    unique_targets = {
+        str(target.state_path.resolve()): target
+        for target in targets
+    }
+    lock_files = []
+    try:
+        for target in sorted(unique_targets.values(), key=lambda item: str(item.state_path.resolve())):
+            lock_path = lock_path_for_target(target)
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = lock_path.open("a+", encoding="utf-8")
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            lock_files.append(handle)
+        yield
+    finally:
+        for handle in reversed(lock_files):
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
 
 
 def target_summary(target: Target, state: GameState) -> dict[str, Any]:
@@ -449,56 +480,103 @@ def main(argv: list[str] | None = None) -> int:
     command = args.command
     try:
         if command == "init":
-            result, target = init_command()
+            target = resolve_target(None)
+            with locked_targets(target):
+                result, target = init_command()
         elif command == "show":
-            result, target = show_command(resolve_target(args.branch))
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = show_command(target)
         elif command == "play":
-            result, target = play_command(resolve_target(args.branch), parse_color(args.color), args.move)
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = play_command(target, parse_color(args.color), args.move)
         elif command == "pass":
-            result, target = pass_command(resolve_target(args.branch), parse_color(args.color))
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = pass_command(target, parse_color(args.color))
         elif command == "resign":
-            result, target = resign_command(resolve_target(args.branch), parse_color(args.color))
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = resign_command(target, parse_color(args.color))
         elif command == "legal":
-            result, target = legal_command(resolve_target(args.branch), parse_color(args.color), args.move)
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = legal_command(target, parse_color(args.color), args.move)
         elif command == "chain":
-            result, target = chain_command(resolve_target(args.branch), args.point)
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = chain_command(target, args.point)
         elif command == "query":
             if args.query_command == "point":
-                result, target = query_point_command(resolve_target(args.branch), args.point)
+                target = resolve_target(args.branch)
+                with locked_targets(target):
+                    result, target = query_point_command(target, args.point)
             elif args.query_command == "chain":
-                result, target = query_chain_command(resolve_target(args.branch), args.point)
+                target = resolve_target(args.branch)
+                with locked_targets(target):
+                    result, target = query_chain_command(target, args.point)
             elif args.query_command == "board":
-                result, target = query_board_command(resolve_target(args.branch))
+                target = resolve_target(args.branch)
+                with locked_targets(target):
+                    result, target = query_board_command(target)
             else:
                 raise RefereeError("unknown_command", "Unknown query command", {"command": args.query_command})
         elif command == "try":
             if args.try_command == "play":
-                result, target = try_play_command(resolve_target(args.branch), parse_color(args.color), args.move)
+                target = resolve_target(args.branch)
+                with locked_targets(target):
+                    result, target = try_play_command(target, parse_color(args.color), args.move)
             elif args.try_command == "legality":
-                result, target = try_legality_command(resolve_target(args.branch), parse_color(args.color), args.move)
+                target = resolve_target(args.branch)
+                with locked_targets(target):
+                    result, target = try_legality_command(target, parse_color(args.color), args.move)
             elif args.try_command == "sequence":
-                result, target = try_sequence_command(resolve_target(args.branch), args.moves)
+                target = resolve_target(args.branch)
+                with locked_targets(target):
+                    result, target = try_sequence_command(target, args.moves)
             else:
                 raise RefereeError("unknown_command", "Unknown try command", {"command": args.try_command})
         elif command == "branch":
             if args.branch_command == "create":
-                result, target = branch_create_command(args.name, args.from_branch)
+                destination = branch_target(args.name)
+                source = resolve_target(args.from_branch)
+                with locked_targets(source, destination):
+                    result, target = branch_create_command(args.name, args.from_branch)
             elif args.branch_command == "list":
                 result, target = branch_list_command()
             elif args.branch_command == "show":
-                result, target = branch_show_command(args.name)
+                target = ensure_branch_exists(args.name)
+                with locked_targets(target):
+                    result, target = branch_show_command(args.name)
             elif args.branch_command == "delete":
-                result, target = branch_delete_command(args.name)
+                target = ensure_branch_exists(args.name)
+                with locked_targets(target):
+                    result, target = branch_delete_command(args.name)
             elif args.branch_command == "reset":
-                result, target = branch_reset_command(args.name, args.reset_from, args.source)
+                destination = ensure_branch_exists(args.name)
+                if args.reset_from == "canonical":
+                    source = resolve_target(None)
+                else:
+                    if args.source is None:
+                        raise RefereeError("invalid_branch_reset", "Branch reset requires --source", {"branch": args.name})
+                    source = ensure_branch_exists(args.source)
+                with locked_targets(source, destination):
+                    result, target = branch_reset_command(args.name, args.reset_from, args.source)
             else:
                 raise RefereeError("unknown_command", "Unknown branch command", {"command": args.branch_command})
         elif command == "validate":
-            result, target = validate_command(resolve_target(args.branch))
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = validate_command(target)
         elif command == "render":
-            result, target = render_command(resolve_target(args.branch))
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = render_command(target)
         elif command == "undo":
-            result, target = undo_command(resolve_target(args.branch), args.count)
+            target = resolve_target(args.branch)
+            with locked_targets(target):
+                result, target = undo_command(target, args.count)
         else:
             raise RefereeError("unknown_command", "Unknown command", {"command": command})
         return emit(success(command, result, target))

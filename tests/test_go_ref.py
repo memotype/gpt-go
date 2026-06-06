@@ -464,6 +464,54 @@ class CliTests(unittest.TestCase):
                     self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), state_before)
                     self.assertEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), game_before)
 
+    def test_cli_play_updates_rendered_board(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+            initial_game = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+
+            self.run_cli(tmpdir, "play", "--color", "black", "--move", "E5")
+            after_first_play = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+            self.assertNotEqual(after_first_play, initial_game)
+            self.assertIn("(X)", after_first_play)
+
+            self.run_cli(tmpdir, "play", "--color", "white", "--move", "D5")
+            after_second_play = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+            self.assertNotEqual(after_second_play, after_first_play)
+            self.assertIn("(O)", after_second_play)
+
+    def test_cli_parallel_play_and_render_leave_render_in_sync(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "init")
+
+            play_process = subprocess.Popen(
+                ["python3", str(REPO_ROOT / "go_ref.py"), "play", "--color", "black", "--move", "E5"],
+                cwd=tmpdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            render_process = subprocess.Popen(
+                ["python3", str(REPO_ROOT / "go_ref.py"), "render"],
+                cwd=tmpdir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            play_stdout, play_stderr = play_process.communicate()
+            render_stdout, render_stderr = render_process.communicate()
+
+            self.assertEqual(play_process.returncode, 0, msg=play_stderr)
+            self.assertEqual(render_process.returncode, 0, msg=render_stderr)
+            self.assertTrue(json.loads(play_stdout)["ok"])
+            self.assertTrue(json.loads(render_stdout)["ok"])
+
+            shown = json.loads(self.run_cli(tmpdir, "show").stdout)
+            self.assertEqual(shown["result"]["state"]["move_number"], 1)
+
+            rendered = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+            self.assertIn("(X)", rendered)
+
     def test_branch_lifecycle_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             self.run_cli(tmpdir, "init")

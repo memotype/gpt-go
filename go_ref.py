@@ -4,12 +4,14 @@ import argparse
 import contextlib
 import fcntl
 import json
-import re
 import shutil
 import sys
+import uuid
+from collections.abc import Generator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, cast
+from typing import TextIO, TypedDict, cast
 
 from models import Color, GameState
 from referee import (
@@ -18,27 +20,57 @@ from referee import (
     apply_play,
     apply_resign,
     chain_at,
-    explain_move_legality,
-    parse_sequence_steps,
+    load_state,
     query_board,
     query_chain,
     query_point,
-    simulate_play,
-    simulate_sequence,
-    list_legal_moves,
-    load_state,
     save_state,
     state_summary,
     undo,
     validate_state,
     is_move_legal,
+    list_legal_moves,
 )
 from render import render_to_path
 
 STATE_PATH = Path("state.json")
 GAME_PATH = Path("game.txt")
-BRANCHES_ROOT = Path("analysis/branches")
-BRANCH_NAME_PATTERN = re.compile(r"^[a-z0-9_-]+$")
+SESSIONS_ROOT = Path("analysis/sessions")
+SESSION_NAME_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+
+
+class ErrorPayload(TypedDict):
+    code: str
+    message: str
+    details: dict[str, object]
+
+
+class MetaPayload(TypedDict):
+    name: str
+    kind: str
+    base: dict[str, object]
+    created_at: str
+    updated_at: str
+
+
+class TargetPayload(TypedDict):
+    kind: str
+    name: str | None
+    state_path: str
+    game_path: str
+    meta_path: str | None
+
+
+class SuccessPayload(TypedDict):
+    ok: bool
+    command: str
+    result: dict[str, object]
+
+
+class FailurePayload(TypedDict):
+    ok: bool
+    command: str
+    error: ErrorPayload
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,24 +79,23 @@ class Target:
     name: str | None
     state_path: Path
     game_path: Path
+    meta_path: Path | None = None
 
 
-def emit(payload: dict[str, Any], exit_code: int = 0) -> int:
+def now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def emit(payload: SuccessPayload | FailurePayload, exit_code: int = 0) -> int:
     print(json.dumps(payload, indent=2, sort_keys=True))
     return exit_code
 
 
-def success(command: str, result: dict[str, Any], target: Target | None = None) -> dict[str, Any]:
-    return {
-        "ok": True,
-        "command": command,
-        "state_path": str(target.state_path) if target else None,
-        "game_path": str(target.game_path) if target else None,
-        "result": result,
-    }
+def success(command: str, result: dict[str, object]) -> SuccessPayload:
+    return {"ok": True, "command": command, "result": result}
 
 
-def failure(command: str, error: RefereeError) -> dict[str, Any]:
+def failure(command: str, error: RefereeError) -> FailurePayload:
     return {
         "ok": False,
         "command": command,
@@ -76,50 +107,50 @@ def failure(command: str, error: RefereeError) -> dict[str, Any]:
     }
 
 
-def add_branch_argument(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--branch")
-
-
-def validate_branch_name(name: str) -> str:
-    if not BRANCH_NAME_PATTERN.fullmatch(name):
-        raise RefereeError("invalid_branch_name", f"Invalid branch name: {name}", {"branch": name})
+def validate_session_name(name: str) -> str:
+    if not name or any(char not in SESSION_NAME_CHARS for char in name):
+        raise RefereeError("invalid_session_name", f"Invalid session name: {name}", {"session": name})
     return name
 
 
-def resolve_target(branch_name: str | None) -> Target:
-    if branch_name is None:
-        return Target(kind="canonical", name=None, state_path=STATE_PATH, game_path=GAME_PATH)
-    name = validate_branch_name(branch_name)
-    branch_dir = BRANCHES_ROOT / name
-    target = Target(kind="branch", name=name, state_path=branch_dir / "state.json", game_path=branch_dir / "game.txt")
-    if not target.state_path.exists():
-        raise RefereeError("branch_not_found", f"Branch not found: {name}", {"branch": name})
-    return target
+def game_target() -> Target:
+    return Target(kind="game", name=None, state_path=STATE_PATH, game_path=GAME_PATH)
 
 
-def branch_target(name: str) -> Target:
-    valid_name = validate_branch_name(name)
-    branch_dir = BRANCHES_ROOT / valid_name
+def session_target(name: str) -> Target:
+    valid_name = validate_session_name(name)
+    session_dir = SESSIONS_ROOT / valid_name
     return Target(
-        kind="branch",
+        kind="session",
         name=valid_name,
-        state_path=branch_dir / "state.json",
-        game_path=branch_dir / "game.txt",
+        state_path=session_dir / "state.json",
+        game_path=session_dir / "game.txt",
+        meta_path=session_dir / "meta.json",
     )
 
 
-def ensure_branch_missing(name: str) -> Target:
-    target = branch_target(name)
-    if target.state_path.exists() or target.game_path.exists() or target.state_path.parent.exists():
-        raise RefereeError("branch_exists", f"Branch already exists: {target.name}", {"branch": target.name})
+def ensure_session_exists(name: str) -> Target:
+    target = session_target(name)
+    if not target.state_path.exists() or target.meta_path is None or not target.meta_path.exists():
+        raise RefereeError("session_not_found", f"Session not found: {name}", {"session": name})
     return target
 
 
-def ensure_branch_exists(name: str) -> Target:
-    target = branch_target(name)
-    if not target.state_path.exists():
-        raise RefereeError("branch_not_found", f"Branch not found: {target.name}", {"branch": target.name})
+def ensure_session_missing(name: str) -> Target:
+    target = session_target(name)
+    if target.state_path.exists() or (target.meta_path is not None and target.meta_path.exists()):
+        raise RefereeError("session_exists", f"Session already exists: {name}", {"session": name})
     return target
+
+
+def target_payload(target: Target) -> TargetPayload:
+    return {
+        "kind": target.kind,
+        "name": target.name,
+        "state_path": str(target.state_path),
+        "game_path": str(target.game_path),
+        "meta_path": str(target.meta_path) if target.meta_path else None,
+    }
 
 
 def load_target_state(target: Target) -> GameState:
@@ -136,21 +167,87 @@ def render_target(target: Target, state: GameState) -> None:
     render_to_path(state, target.game_path)
 
 
+def load_session_meta(target: Target) -> MetaPayload:
+    if target.meta_path is None or not target.meta_path.exists():
+        raise RefereeError("session_meta_missing", f"Session metadata missing for {target.name}", {"session": target.name})
+    try:
+        return cast(MetaPayload, json.loads(target.meta_path.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as exc:
+        raise RefereeError("invalid_json", f"Invalid JSON in {target.meta_path}: {exc.msg}") from exc
+
+
+def save_session_meta(target: Target, meta: MetaPayload) -> None:
+    if target.meta_path is None:
+        raise RefereeError("session_meta_missing", "Session target is missing meta path")
+    target.meta_path.parent.mkdir(parents=True, exist_ok=True)
+    target.meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def session_meta_payload(meta: MetaPayload) -> dict[str, object]:
+    return {
+        "name": meta["name"],
+        "kind": meta["kind"],
+        "base": meta["base"],
+        "created_at": meta["created_at"],
+        "updated_at": meta["updated_at"],
+    }
+
+
+def source_payload(kind: str, name: str | None = None) -> dict[str, object]:
+    if kind == "game":
+        return {"kind": "game", "name": None, "ref": "game"}
+    return {"kind": "session", "name": name, "ref": f"session:{name}"}
+
+
+def parse_source_spec(spec: str) -> Target:
+    text = spec.strip()
+    if text == "game":
+        return game_target()
+    prefix = "session:"
+    if text.startswith(prefix):
+        return ensure_session_exists(text[len(prefix) :])
+    raise RefereeError("invalid_source", f"Invalid source: {spec}", {"source": spec})
+
+
+def copy_target_state(source: Target, destination: Target) -> GameState:
+    state = load_target_state(source)
+    save_target_state(destination, state)
+    render_target(destination, state)
+    return state
+
+
+def copy_session(target: Target, source: Target, *, kind: str) -> dict[str, object]:
+    state = copy_target_state(source, target)
+    timestamp = now_iso()
+    meta: MetaPayload = {
+        "name": cast(str, target.name),
+        "kind": kind,
+        "base": source_payload(source.kind, source.name),
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+    save_session_meta(target, meta)
+    return {"target": target_payload(target), "session": session_meta_payload(meta), "state": state_summary(state)}
+
+
+def touch_session_meta(target: Target) -> None:
+    meta = load_session_meta(target)
+    meta["updated_at"] = now_iso()
+    save_session_meta(target, meta)
+
+
 def lock_path_for_target(target: Target) -> Path:
-    if target.kind == "canonical":
+    if target.kind == "game":
         return target.state_path.with_name(f".{target.state_path.name}.lock")
-    branch_name = target.name or "branch"
-    BRANCHES_ROOT.mkdir(parents=True, exist_ok=True)
-    return BRANCHES_ROOT / f".{branch_name}.lock"
+    session_name = target.name or "session"
+    SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
+    return SESSIONS_ROOT / f".{session_name}.lock"
 
 
 @contextlib.contextmanager
-def locked_targets(*targets: Target) -> Iterator[None]:
-    unique_targets = {
-        str(target.state_path.resolve()): target
-        for target in targets
-    }
-    lock_files = []
+def locked_targets(*targets: Target) -> Generator[None, None, None]:
+    unique_targets = {str(target.state_path.resolve()): target for target in targets}
+    lock_files: list[TextIO] = []
     try:
         for target in sorted(unique_targets.values(), key=lambda item: str(item.state_path.resolve())):
             lock_path = lock_path_for_target(target)
@@ -165,114 +262,88 @@ def locked_targets(*targets: Target) -> Iterator[None]:
             handle.close()
 
 
-def target_summary(target: Target, state: GameState) -> dict[str, Any]:
-    return {
-        "name": target.name,
-        "target_kind": target.kind,
-        "state_path": str(target.state_path),
-        "game_path": str(target.game_path),
-        "state": state_summary(state),
-    }
-
-
-def copy_target_state(source: Target, destination: Target) -> GameState:
-    state = load_target_state(source)
-    save_target_state(destination, state)
-    render_target(destination, state)
-    return state
-
-
 def parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="go_ref", description="9x9 Go referee")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    root = argparse.ArgumentParser(prog="go_ref", description="9x9 Go referee")
+    subparsers = root.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("init")
-    show = subparsers.add_parser("show")
-    add_branch_argument(show)
+    game = subparsers.add_parser("game")
+    game_subparsers = game.add_subparsers(dest="game_command", required=True)
 
-    play = subparsers.add_parser("play")
-    play.add_argument("--color", required=True, choices=["black", "white"])
-    play.add_argument("--move", required=True)
-    add_branch_argument(play)
+    _ = game_subparsers.add_parser("init")
+    _ = game_subparsers.add_parser("show")
 
-    passed = subparsers.add_parser("pass")
-    passed.add_argument("--color", required=True, choices=["black", "white"])
-    add_branch_argument(passed)
+    for name in ("play", "pass", "resign", "legal"):
+        parser_obj = game_subparsers.add_parser(name)
+        _ = parser_obj.add_argument("--color", required=True, choices=["black", "white"])
+        if name == "play":
+            _ = parser_obj.add_argument("--move", required=True)
+        if name == "legal":
+            _ = parser_obj.add_argument("--move")
 
-    resign = subparsers.add_parser("resign")
-    resign.add_argument("--color", required=True, choices=["black", "white"])
-    add_branch_argument(resign)
+    chain_parser = game_subparsers.add_parser("chain")
+    _ = chain_parser.add_argument("--point", required=True)
 
-    legal = subparsers.add_parser("legal")
-    legal.add_argument("--color", required=True, choices=["black", "white"])
-    legal.add_argument("--move")
-    add_branch_argument(legal)
-
-    chain = subparsers.add_parser("chain")
-    chain.add_argument("--point", required=True)
-    add_branch_argument(chain)
-
-    query = subparsers.add_parser("query")
-    query_subparsers = query.add_subparsers(dest="query_command", required=True)
-
+    query_parser = game_subparsers.add_parser("query")
+    query_subparsers = query_parser.add_subparsers(dest="query_command", required=True)
     query_point_parser = query_subparsers.add_parser("point")
-    query_point_parser.add_argument("--point", required=True)
-    add_branch_argument(query_point_parser)
-
+    _ = query_point_parser.add_argument("--point", required=True)
     query_chain_parser = query_subparsers.add_parser("chain")
-    query_chain_parser.add_argument("--point", required=True)
-    add_branch_argument(query_chain_parser)
+    _ = query_chain_parser.add_argument("--point", required=True)
+    _ = query_subparsers.add_parser("board")
 
-    query_board_parser = query_subparsers.add_parser("board")
-    add_branch_argument(query_board_parser)
+    _ = game_subparsers.add_parser("validate")
+    _ = game_subparsers.add_parser("render")
+    undo_parser = game_subparsers.add_parser("undo")
+    _ = undo_parser.add_argument("--count", type=int, default=1)
 
-    try_parser = subparsers.add_parser("try")
-    try_subparsers = try_parser.add_subparsers(dest="try_command", required=True)
+    session = subparsers.add_parser("session")
+    session_subparsers = session.add_subparsers(dest="session_command", required=True)
 
-    try_play_parser = try_subparsers.add_parser("play")
-    try_play_parser.add_argument("--color", required=True, choices=["black", "white"])
-    try_play_parser.add_argument("--move", required=True)
-    add_branch_argument(try_play_parser)
+    create_parser = session_subparsers.add_parser("create")
+    _ = create_parser.add_argument("--name", required=True)
+    _ = create_parser.add_argument("--from", dest="source", default="game")
 
-    try_legality_parser = try_subparsers.add_parser("legality")
-    try_legality_parser.add_argument("--color", required=True, choices=["black", "white"])
-    try_legality_parser.add_argument("--move", required=True)
-    add_branch_argument(try_legality_parser)
+    temp_parser = session_subparsers.add_parser("temp")
+    _ = temp_parser.add_argument("--from", dest="source", default="game")
 
-    try_sequence_parser = try_subparsers.add_parser("sequence")
-    try_sequence_parser.add_argument("--moves", required=True)
-    add_branch_argument(try_sequence_parser)
+    _ = session_subparsers.add_parser("list")
 
-    branch = subparsers.add_parser("branch")
-    branch_subparsers = branch.add_subparsers(dest="branch_command", required=True)
+    for name in ("show", "delete", "validate", "render"):
+        parser_obj = session_subparsers.add_parser(name)
+        _ = parser_obj.add_argument("--name", required=True)
 
-    branch_create = branch_subparsers.add_parser("create")
-    branch_create.add_argument("--name", required=True)
-    branch_create.add_argument("--from-branch")
+    persist_parser = session_subparsers.add_parser("persist")
+    _ = persist_parser.add_argument("--name", required=True)
+    _ = persist_parser.add_argument("--as", dest="new_name", required=True)
 
-    branch_subparsers.add_parser("list")
+    reset_parser = session_subparsers.add_parser("reset")
+    _ = reset_parser.add_argument("--name", required=True)
+    _ = reset_parser.add_argument("--from", dest="source", required=True)
 
-    branch_show = branch_subparsers.add_parser("show")
-    branch_show.add_argument("--name", required=True)
+    for name in ("play", "pass", "resign", "legal", "chain", "undo"):
+        parser_obj = session_subparsers.add_parser(name)
+        _ = parser_obj.add_argument("--name", required=True)
+        if name in {"play", "pass", "resign", "legal"}:
+            _ = parser_obj.add_argument("--color", required=True, choices=["black", "white"])
+        if name == "play":
+            _ = parser_obj.add_argument("--move", required=True)
+        if name == "legal":
+            _ = parser_obj.add_argument("--move")
+        if name == "chain":
+            _ = parser_obj.add_argument("--point", required=True)
+        if name == "undo":
+            _ = parser_obj.add_argument("--count", type=int, default=1)
 
-    branch_delete = branch_subparsers.add_parser("delete")
-    branch_delete.add_argument("--name", required=True)
+    session_query_parser = session_subparsers.add_parser("query")
+    _ = session_query_parser.add_argument("--name", required=True)
+    session_query_subparsers = session_query_parser.add_subparsers(dest="query_command", required=True)
+    session_query_point = session_query_subparsers.add_parser("point")
+    _ = session_query_point.add_argument("--point", required=True)
+    session_query_chain = session_query_subparsers.add_parser("chain")
+    _ = session_query_chain.add_argument("--point", required=True)
+    _ = session_query_subparsers.add_parser("board")
 
-    branch_reset = branch_subparsers.add_parser("reset")
-    branch_reset.add_argument("--name", required=True)
-    branch_reset.add_argument("--from", dest="reset_from", required=True, choices=["canonical", "branch"])
-    branch_reset.add_argument("--source")
-
-    validate = subparsers.add_parser("validate")
-    add_branch_argument(validate)
-    render = subparsers.add_parser("render")
-    add_branch_argument(render)
-
-    undo_parser = subparsers.add_parser("undo")
-    undo_parser.add_argument("--count", type=int, default=1)
-    add_branch_argument(undo_parser)
-
-    return parser
+    return root
 
 
 def parse_color(value: str) -> Color:
@@ -281,305 +352,319 @@ def parse_color(value: str) -> Color:
     return cast(Color, value)
 
 
-def init_command() -> tuple[dict[str, Any], Target]:
-    target = resolve_target(None)
+def init_game_command() -> dict[str, object]:
+    target = game_target()
     state = GameState.new_game()
     save_target_state(target, state)
     render_target(target, state)
-    return ({"created": True, "state": state_summary(state)}, target)
+    return {"target": target_payload(target), "created": True, "state": state_summary(state)}
 
 
-def show_command(target: Target) -> tuple[dict[str, Any], Target]:
+def show_command(target: Target) -> dict[str, object]:
     state = load_target_state(target)
-    return ({"state": state.to_dict()}, target)
+    result: dict[str, object] = {"target": target_payload(target), "mutated": False, "state": state.to_dict()}
+    if target.kind == "session":
+        result["session"] = session_meta_payload(load_session_meta(target))
+    return result
 
 
-def play_command(target: Target, color: Color, move: str) -> tuple[dict[str, Any], Target]:
+def play_command(target: Target, color: Color, move: str) -> dict[str, object]:
     state = load_target_state(target)
     result = apply_play(state, color, move.upper())
     save_target_state(target, state)
     render_target(target, state)
-    return (
-        {
-            "applied_move": result.applied_move.to_dict(),
-            "captures": result.captures,
-            "capture_count_delta": result.capture_count_delta,
-            "ko_point": result.ko_point,
-            "status": result.status,
-            "state": result.state,
-        },
-        target,
-    )
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {
+        "target": target_payload(target),
+        "mutated": True,
+        "applied_move": result.applied_move.to_dict(),
+        "captures": result.captures,
+        "capture_count_delta": result.capture_count_delta,
+        "ko_point": result.ko_point,
+        "status": result.status,
+        "state": result.state,
+    }
 
 
-def pass_command(target: Target, color: Color) -> tuple[dict[str, Any], Target]:
+def pass_command(target: Target, color: Color) -> dict[str, object]:
     state = load_target_state(target)
     result = apply_pass(state, color)
     save_target_state(target, state)
     render_target(target, state)
-    return (result, target)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": True, **result}
 
 
-def resign_command(target: Target, color: Color) -> tuple[dict[str, Any], Target]:
+def resign_command(target: Target, color: Color) -> dict[str, object]:
     state = load_target_state(target)
     result = apply_resign(state, color)
     save_target_state(target, state)
     render_target(target, state)
-    return (result, target)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": True, **result}
 
 
-def legal_command(target: Target, color: Color, move: str | None) -> tuple[dict[str, Any], Target]:
+def legal_command(target: Target, color: Color, move: str | None) -> dict[str, object]:
     state = load_target_state(target)
     if move is not None:
         legal, reason = is_move_legal(state, color, move.upper())
-        return ({"color": color, "move": move.upper(), "legal": legal, "reason": reason}, target)
-    legal_moves = list_legal_moves(state, color)
-    return (
-        {
+        return {
+            "target": target_payload(target),
+            "mutated": False,
             "color": color,
-            "legal_moves": legal_moves,
-            "pass_legal": state.status not in {"resigned", "game_over"} and state.side_to_move == color,
-            "count": len(legal_moves),
-            "ko_point": state.ko_point,
-        },
-        target,
-    )
+            "move": move.upper(),
+            "legal": legal,
+            "reason": reason,
+        }
+    legal_moves = list_legal_moves(state, color)
+    return {
+        "target": target_payload(target),
+        "mutated": False,
+        "color": color,
+        "legal_moves": legal_moves,
+        "pass_legal": state.status not in {"resigned", "game_over"} and state.side_to_move == color,
+        "count": len(legal_moves),
+        "ko_point": state.ko_point,
+    }
 
 
-def chain_command(target: Target, point: str) -> tuple[dict[str, Any], Target]:
+def chain_command(target: Target, point: str) -> dict[str, object]:
     state = load_target_state(target)
-    return (chain_at(state, point.upper()), target)
+    return {"target": target_payload(target), "mutated": False, **chain_at(state, point.upper())}
 
 
-def validate_command(target: Target) -> tuple[dict[str, Any], Target]:
+def validate_command(target: Target) -> dict[str, object]:
     state = load_target_state(target)
     checks = validate_state(state)
     render_target(target, state)
-    return ({"valid": True, "checks": checks}, target)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": False, "valid": True, "checks": checks}
 
 
-def render_command(target: Target) -> tuple[dict[str, Any], Target]:
+def render_command(target: Target) -> dict[str, object]:
     state = load_target_state(target)
     render_target(target, state)
-    return ({"rendered": True, "game_path": str(target.game_path)}, target)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": False, "rendered": True}
 
 
-def undo_command(target: Target, count: int) -> tuple[dict[str, Any], Target]:
+def undo_command(target: Target, count: int) -> dict[str, object]:
     state = load_target_state(target)
     result = undo(state, count)
     save_target_state(target, state)
     render_target(target, state)
-    return (result, target)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": True, **result}
 
 
-def query_point_command(target: Target, point: str) -> tuple[dict[str, Any], Target]:
+def query_point_command(target: Target, point: str) -> dict[str, object]:
     state = load_target_state(target)
-    return (query_point(state, point.upper()), target)
+    return {"target": target_payload(target), "mutated": False, **query_point(state, point.upper())}
 
 
-def query_chain_command(target: Target, point: str) -> tuple[dict[str, Any], Target]:
+def query_chain_command(target: Target, point: str) -> dict[str, object]:
     state = load_target_state(target)
-    return (query_chain(state, point.upper()), target)
+    return {"target": target_payload(target), "mutated": False, **query_chain(state, point.upper())}
 
 
-def query_board_command(target: Target) -> tuple[dict[str, Any], Target]:
+def query_board_command(target: Target) -> dict[str, object]:
     state = load_target_state(target)
-    return (query_board(state), target)
+    return {"target": target_payload(target), "mutated": False, **query_board(state)}
 
 
-def try_play_command(target: Target, color: Color, move: str) -> tuple[dict[str, Any], Target]:
-    state = load_target_state(target)
-    return (simulate_play(state, color, move.upper()), target)
+def session_create_command(name: str, source_spec: str, *, kind: str) -> dict[str, object]:
+    destination = ensure_session_missing(name)
+    source = parse_source_spec(source_spec)
+    return copy_session(destination, source, kind=kind)
 
 
-def try_legality_command(target: Target, color: Color, move: str) -> tuple[dict[str, Any], Target]:
-    state = load_target_state(target)
-    return (explain_move_legality(state, color, move.upper()), target)
+def session_temp_name() -> str:
+    return f"_tmp_{uuid.uuid4().hex[:8]}"
 
 
-def try_sequence_command(target: Target, moves: str) -> tuple[dict[str, Any], Target]:
-    state = load_target_state(target)
-    parse_sequence_steps(moves)
-    return (simulate_sequence(state, moves), target)
-
-
-def branch_create_command(name: str, from_branch: str | None) -> tuple[dict[str, Any], Target]:
-    target = ensure_branch_missing(name)
-    source = resolve_target(from_branch)
-    state = copy_target_state(source, target)
-    return (
-        {
-            "name": target.name,
-            "created": True,
-            "source": {"kind": source.kind, "branch_name": source.name},
-            "state": state_summary(state),
-        },
-        target,
-    )
-
-
-def branch_list_command() -> tuple[dict[str, Any], None]:
-    branches: list[dict[str, Any]] = []
-    if BRANCHES_ROOT.exists():
-        for branch_dir in sorted(item for item in BRANCHES_ROOT.iterdir() if item.is_dir()):
-            name = branch_dir.name
+def session_list_command() -> dict[str, object]:
+    sessions: list[dict[str, object]] = []
+    if SESSIONS_ROOT.exists():
+        for session_dir in sorted(item for item in SESSIONS_ROOT.iterdir() if item.is_dir()):
             try:
-                target = ensure_branch_exists(name)
+                target = ensure_session_exists(session_dir.name)
                 state = load_target_state(target)
+                meta = load_session_meta(target)
             except RefereeError:
                 continue
-            branches.append(
+            sessions.append(
                 {
-                    "name": name,
-                    "state_path": str(target.state_path),
-                    "game_path": str(target.game_path),
-                    "move_number": state.move_number,
-                    "side_to_move": state.side_to_move,
-                    "status": state.status,
-                    "last_move": state.last_move.to_dict() if state.last_move else None,
+                    "target": target_payload(target),
+                    "session": session_meta_payload(meta),
+                    "state": state_summary(state),
                 }
             )
-    return ({"branches": branches}, None)
+    return {
+        "target": {"kind": "session_collection", "name": None, "state_path": "", "game_path": "", "meta_path": None},
+        "mutated": False,
+        "sessions": sessions,
+    }
 
 
-def branch_show_command(name: str) -> tuple[dict[str, Any], Target]:
-    target = ensure_branch_exists(name)
-    state = load_target_state(target)
-    return ({"name": target.name, "state": state.to_dict()}, target)
-
-
-def branch_delete_command(name: str) -> tuple[dict[str, Any], Target]:
-    target = ensure_branch_exists(name)
+def session_delete_command(name: str) -> dict[str, object]:
+    target = ensure_session_exists(name)
+    meta = load_session_meta(target)
     shutil.rmtree(target.state_path.parent)
-    return ({"name": target.name, "deleted": True}, target)
+    return {"target": target_payload(target), "session": session_meta_payload(meta), "deleted": True}
 
 
-def branch_reset_command(name: str, reset_from: str, source_name: str | None) -> tuple[dict[str, Any], Target]:
-    target = ensure_branch_exists(name)
-    if reset_from == "canonical":
-        if source_name is not None:
-            raise RefereeError("invalid_branch_reset", "Canonical reset does not take --source", {"branch": name})
-        source = resolve_target(None)
-    else:
-        if source_name is None:
-            raise RefereeError("invalid_branch_reset", "Branch reset requires --source", {"branch": name})
-        source = ensure_branch_exists(source_name)
+def session_reset_command(name: str, source_spec: str) -> dict[str, object]:
+    target = ensure_session_exists(name)
+    source = parse_source_spec(source_spec)
     state = copy_target_state(source, target)
-    return (
-        {
-            "name": target.name,
-            "reset_from": {"kind": source.kind, "branch_name": source.name},
-            "state": state_summary(state),
-        },
-        target,
-    )
+    meta = load_session_meta(target)
+    meta["base"] = source_payload(source.kind, source.name)
+    meta["updated_at"] = now_iso()
+    save_session_meta(target, meta)
+    return {
+        "target": target_payload(target),
+        "session": session_meta_payload(meta),
+        "source": source_payload(source.kind, source.name),
+        "state": state_summary(state),
+    }
+
+
+def session_persist_command(name: str, new_name: str) -> dict[str, object]:
+    source = ensure_session_exists(name)
+    destination = ensure_session_missing(new_name)
+    state = copy_target_state(source, destination)
+    source_meta = load_session_meta(source)
+    meta: MetaPayload = {
+        "name": cast(str, destination.name),
+        "kind": "persistent",
+        "base": source_meta["base"],
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    save_session_meta(destination, meta)
+    return {
+        "target": target_payload(destination),
+        "source": target_payload(source),
+        "session": session_meta_payload(meta),
+        "state": state_summary(state),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    command = args.command
+    command = cast(str, args.command)
     try:
-        if command == "init":
-            target = resolve_target(None)
+        if command == "game":
+            target = game_target()
             with locked_targets(target):
-                result, target = init_command()
-        elif command == "show":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = show_command(target)
-        elif command == "play":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = play_command(target, parse_color(args.color), args.move)
-        elif command == "pass":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = pass_command(target, parse_color(args.color))
-        elif command == "resign":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = resign_command(target, parse_color(args.color))
-        elif command == "legal":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = legal_command(target, parse_color(args.color), args.move)
-        elif command == "chain":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = chain_command(target, args.point)
-        elif command == "query":
-            if args.query_command == "point":
-                target = resolve_target(args.branch)
-                with locked_targets(target):
-                    result, target = query_point_command(target, args.point)
-            elif args.query_command == "chain":
-                target = resolve_target(args.branch)
-                with locked_targets(target):
-                    result, target = query_chain_command(target, args.point)
-            elif args.query_command == "board":
-                target = resolve_target(args.branch)
-                with locked_targets(target):
-                    result, target = query_board_command(target)
-            else:
-                raise RefereeError("unknown_command", "Unknown query command", {"command": args.query_command})
-        elif command == "try":
-            if args.try_command == "play":
-                target = resolve_target(args.branch)
-                with locked_targets(target):
-                    result, target = try_play_command(target, parse_color(args.color), args.move)
-            elif args.try_command == "legality":
-                target = resolve_target(args.branch)
-                with locked_targets(target):
-                    result, target = try_legality_command(target, parse_color(args.color), args.move)
-            elif args.try_command == "sequence":
-                target = resolve_target(args.branch)
-                with locked_targets(target):
-                    result, target = try_sequence_command(target, args.moves)
-            else:
-                raise RefereeError("unknown_command", "Unknown try command", {"command": args.try_command})
-        elif command == "branch":
-            if args.branch_command == "create":
-                destination = branch_target(args.name)
-                source = resolve_target(args.from_branch)
-                with locked_targets(source, destination):
-                    result, target = branch_create_command(args.name, args.from_branch)
-            elif args.branch_command == "list":
-                result, target = branch_list_command()
-            elif args.branch_command == "show":
-                target = ensure_branch_exists(args.name)
-                with locked_targets(target):
-                    result, target = branch_show_command(args.name)
-            elif args.branch_command == "delete":
-                target = ensure_branch_exists(args.name)
-                with locked_targets(target):
-                    result, target = branch_delete_command(args.name)
-            elif args.branch_command == "reset":
-                destination = ensure_branch_exists(args.name)
-                if args.reset_from == "canonical":
-                    source = resolve_target(None)
+                game_command = cast(str, args.game_command)
+                if game_command == "init":
+                    result = init_game_command()
+                elif game_command == "show":
+                    result = show_command(target)
+                elif game_command == "play":
+                    result = play_command(target, parse_color(cast(str, args.color)), cast(str, args.move))
+                elif game_command == "pass":
+                    result = pass_command(target, parse_color(cast(str, args.color)))
+                elif game_command == "resign":
+                    result = resign_command(target, parse_color(cast(str, args.color)))
+                elif game_command == "legal":
+                    result = legal_command(target, parse_color(cast(str, args.color)), cast(str | None, args.move))
+                elif game_command == "chain":
+                    result = chain_command(target, cast(str, args.point))
+                elif game_command == "query":
+                    query_command = cast(str, args.query_command)
+                    if query_command == "point":
+                        result = query_point_command(target, cast(str, args.point))
+                    elif query_command == "chain":
+                        result = query_chain_command(target, cast(str, args.point))
+                    elif query_command == "board":
+                        result = query_board_command(target)
+                    else:
+                        raise RefereeError("unknown_command", "Unknown game query command", {"command": query_command})
+                elif game_command == "validate":
+                    result = validate_command(target)
+                elif game_command == "render":
+                    result = render_command(target)
+                elif game_command == "undo":
+                    result = undo_command(target, cast(int, args.count))
                 else:
-                    if args.source is None:
-                        raise RefereeError("invalid_branch_reset", "Branch reset requires --source", {"branch": args.name})
-                    source = ensure_branch_exists(args.source)
+                    raise RefereeError("unknown_command", "Unknown game command", {"command": game_command})
+        elif command == "session":
+            session_command = cast(str, args.session_command)
+            if session_command == "create":
+                destination = session_target(cast(str, args.name))
+                source = parse_source_spec(cast(str, args.source))
                 with locked_targets(source, destination):
-                    result, target = branch_reset_command(args.name, args.reset_from, args.source)
+                    result = session_create_command(cast(str, args.name), cast(str, args.source), kind="persistent")
+            elif session_command == "temp":
+                temp_name = session_temp_name()
+                destination = session_target(temp_name)
+                source = parse_source_spec(cast(str, args.source))
+                with locked_targets(source, destination):
+                    result = session_create_command(temp_name, cast(str, args.source), kind="ephemeral")
+            elif session_command == "list":
+                result = session_list_command()
+            elif session_command == "delete":
+                target = ensure_session_exists(cast(str, args.name))
+                with locked_targets(target):
+                    result = session_delete_command(cast(str, args.name))
+            elif session_command == "persist":
+                source = ensure_session_exists(cast(str, args.name))
+                destination = session_target(cast(str, args.new_name))
+                with locked_targets(source, destination):
+                    result = session_persist_command(cast(str, args.name), cast(str, args.new_name))
+            elif session_command == "reset":
+                destination = ensure_session_exists(cast(str, args.name))
+                source = parse_source_spec(cast(str, args.source))
+                with locked_targets(source, destination):
+                    result = session_reset_command(cast(str, args.name), cast(str, args.source))
             else:
-                raise RefereeError("unknown_command", "Unknown branch command", {"command": args.branch_command})
-        elif command == "validate":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = validate_command(target)
-        elif command == "render":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = render_command(target)
-        elif command == "undo":
-            target = resolve_target(args.branch)
-            with locked_targets(target):
-                result, target = undo_command(target, args.count)
+                target = ensure_session_exists(cast(str, args.name))
+                with locked_targets(target):
+                    if session_command == "show":
+                        result = show_command(target)
+                    elif session_command == "play":
+                        result = play_command(target, parse_color(cast(str, args.color)), cast(str, args.move))
+                    elif session_command == "pass":
+                        result = pass_command(target, parse_color(cast(str, args.color)))
+                    elif session_command == "resign":
+                        result = resign_command(target, parse_color(cast(str, args.color)))
+                    elif session_command == "legal":
+                        result = legal_command(target, parse_color(cast(str, args.color)), cast(str | None, args.move))
+                    elif session_command == "chain":
+                        result = chain_command(target, cast(str, args.point))
+                    elif session_command == "query":
+                        query_command = cast(str, args.query_command)
+                        if query_command == "point":
+                            result = query_point_command(target, cast(str, args.point))
+                        elif query_command == "chain":
+                            result = query_chain_command(target, cast(str, args.point))
+                        elif query_command == "board":
+                            result = query_board_command(target)
+                        else:
+                            raise RefereeError(
+                                "unknown_command",
+                                "Unknown session query command",
+                                {"command": query_command},
+                            )
+                    elif session_command == "validate":
+                        result = validate_command(target)
+                    elif session_command == "render":
+                        result = render_command(target)
+                    elif session_command == "undo":
+                        result = undo_command(target, cast(int, args.count))
+                    else:
+                        raise RefereeError("unknown_command", "Unknown session command", {"command": session_command})
         else:
             raise RefereeError("unknown_command", "Unknown command", {"command": command})
-        return emit(success(command, result, target))
+        return emit(success(command, result))
     except RefereeError as error:
         print(f"{command}: {error.message}", file=sys.stderr)
         return emit(failure(command, error), exit_code=1)

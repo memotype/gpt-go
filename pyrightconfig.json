@@ -1,0 +1,17 @@
+{
+  "include": [
+    "go_ref.py",
+    "models.py",
+    "referee.py",
+    "render.py",
+    "tests/test_go_ref.py"
+  ],
+  "typeCheckingMode": "standard",
+  "reportDeprecated": "none",
+  "reportExplicitAny": "none",
+  "reportUnusedCallResult": "none",
+  "reportAny": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none"
+}

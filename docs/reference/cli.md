@@ -1,13 +1,10 @@
 # Go Referee CLI Reference
 
-This document is the canonical reference for the referee CLI and its tool
-contract. It describes what the tool does, what files it owns, how commands
-mutate state, and how to inspect or simulate positions safely.
+This document is the canonical reference for the referee CLI and its contract.
 
 ## Purpose
 
-The referee is responsible for deterministic game mechanics and state
-management:
+The referee is responsible for deterministic mechanics and state management:
 
 - board state
 - legal move checking
@@ -17,112 +14,205 @@ management:
 - pass and resignation
 - undo
 - tactical queries
-- hypothetical move and sequence simulation
-- persisted analysis branches
 - generated board rendering
+- persistent and ephemeral analysis sessions
 
-The referee does not provide strategy, move selection, scoring judgment, or
-life-and-death verdicts.
+The referee does not choose moves, rank candidates, or judge score.
 
-## Analysis Modes
+## Player Workflow At A Glance
 
-The repo supports three modes of use:
+For real play, the default routine is:
 
-1. Canonical game state
-   - The real game lives in `state.json` and `game.txt`.
-2. Stateless tactical reading
-   - `try` reads hypothetical moves and short sequences without mutating files.
-3. Persisted deeper reading
-   - `branch` creates named hypothetical workspaces under `analysis/branches/`.
+1. Record real moves on `game`.
+2. Inspect canonical state with `game query`.
+3. Create a `session` for hypothetical reading.
+4. Play and query candidate lines inside that session.
+5. Record the final chosen move back on `game`.
 
-Use the lightest tool that answers the question.
+Example:
 
-## Files
+```bash
+python3 go_ref.py game play --color white --move D5
+python3 go_ref.py game query board
+python3 go_ref.py session temp --from game
+python3 go_ref.py session play --name _tmp_ab12cd34 --color black --move C3
+python3 go_ref.py session query --name _tmp_ab12cd34 board
+python3 go_ref.py game play --color black --move C3
+```
+
+The key rule is:
+
+- `game` is real
+- `session` is hypothetical
+
+## Targets
+
+The CLI exposes two target types.
+
+### `game`
+
+The canonical game lives in:
 
 - `state.json`
-  - authoritative canonical game state and primary machine-readable interface
 - `game.txt`
-  - generated board view for human inspection
-  - not a machine interface
-  - never edit directly
-- `analysis/branches/<branch_name>/state.json`
-  - authoritative state for one persisted hypothetical branch
-- `analysis/branches/<branch_name>/game.txt`
-  - rendered board view for one persisted hypothetical branch
 
-Treat `state.json` as the live truth and `game.txt` as a rendered projection.
+### `session`
+
+Analysis sessions live in:
+
+- `analysis/sessions/<name>/state.json`
+- `analysis/sessions/<name>/game.txt`
+- `analysis/sessions/<name>/meta.json`
+
+Sessions may be:
+
+- `persistent`
+- `ephemeral`
 
 ## Command Contract
 
 ### Mutating commands
 
-These commands update stored state for their target and refresh the matching
-rendered board:
+These update stored state for their target and refresh the matching rendered
+board:
 
-- `init`
-- `play`
-- `pass`
-- `resign`
-- `undo`
-- branch lifecycle commands that create or reset branch state
-
-After a successful mutating command, the CLI writes updated state and refreshes
-`game.txt` for that same target automatically.
+- `game init`
+- `game play`
+- `game pass`
+- `game resign`
+- `game undo`
+- `session create`
+- `session temp`
+- `session play`
+- `session pass`
+- `session resign`
+- `session undo`
+- `session reset`
+- `session persist`
 
 ### Non-mutating commands
 
-These commands do not mutate stored state or rendered output:
+These do not mutate stored state:
 
-- `show`
-- `legal`
-- `chain`
-- `query`
-- `try`
+- `game show`
+- `game legal`
+- `game chain`
+- `game query`
+- `session show`
+- `session list`
+- `session legal`
+- `session chain`
+- `session query`
 
 ### Concurrency contract
 
-Commands aimed at the same canonical game or the same branch are serialized by
-the CLI so concurrent processes do not race `state.json` and `game.txt`.
+Commands aimed at the same canonical game or the same session are serialized by
+the CLI so concurrent processes cannot race `state.json` and `game.txt`.
 
-## Starting A Game
+## Canonical Game Commands
 
-```bash
-python3 go_ref.py init
-```
-
-This creates or resets:
-
-- `state.json`
-- `game.txt`
-
-Initial settings:
-
-- board size: 9
-- komi: 6.5
-- handicap: 0
-- Black to move
-
-## Commands
-
-### `show`
-
-Print the current state as JSON.
+Start or reset the canonical game:
 
 ```bash
-python3 go_ref.py show
-python3 go_ref.py show --branch center-fight
+python3 go_ref.py game init
 ```
 
-### `play`
-
-Play a board move on canonical state or a branch.
+Inspect canonical state:
 
 ```bash
-python3 go_ref.py play --color black --move D5
-python3 go_ref.py play --branch center-fight --color white --move F6
+python3 go_ref.py game show
+python3 go_ref.py game query board
+python3 go_ref.py game chain --point E5
 ```
 
-Move format:
+Mutate canonical state:
+
+```bash
+python3 go_ref.py game play --color black --move E5
+python3 go_ref.py game pass --color white
+python3 go_ref.py game resign --color black
+python3 go_ref.py game undo --count 1
+```
+
+Other canonical helpers:
+
+```bash
+python3 go_ref.py game legal --color black
+python3 go_ref.py game legal --color black --move E5
+python3 go_ref.py game validate
+python3 go_ref.py game render
+```
+
+## Session Commands
+
+Create a persistent session from canonical state:
+
+```bash
+python3 go_ref.py session create --name center-read
+```
+
+Create a persistent session from another session:
+
+```bash
+python3 go_ref.py session create --name ko-read --from session:center-read
+```
+
+Create an ephemeral session:
+
+```bash
+python3 go_ref.py session temp --from game
+```
+
+List sessions:
+
+```bash
+python3 go_ref.py session list
+```
+
+Inspect or mutate a session:
+
+```bash
+python3 go_ref.py session show --name center-read
+python3 go_ref.py session play --name center-read --color black --move D4
+python3 go_ref.py session query --name center-read board
+python3 go_ref.py session undo --name center-read --count 1
+```
+
+The session query syntax is intentionally consistent:
+
+```bash
+python3 go_ref.py session query --name center-read board
+python3 go_ref.py session query --name center-read point --point E5
+python3 go_ref.py session query --name center-read chain --point D4
+```
+
+Reset, persist, or delete:
+
+```bash
+python3 go_ref.py session reset --name center-read --from game
+python3 go_ref.py session persist --name _tmp_ab12cd34 --as saved-read
+python3 go_ref.py session delete --name center-read
+```
+
+## Query Subcommands
+
+Both `game query` and `session query` support:
+
+```bash
+python3 go_ref.py game query point --point E5
+python3 go_ref.py game query chain --point D4
+python3 go_ref.py game query board
+```
+
+and:
+
+```bash
+python3 go_ref.py session query --name center-read point --point E5
+python3 go_ref.py session query --name center-read chain --point D4
+python3 go_ref.py session query --name center-read board
+```
+
+## Move Format
 
 - columns: `A B C D E F G H J`
 - rows: `1` through `9`
@@ -137,211 +227,24 @@ The tool rejects:
 - moves played out of turn
 - moves after the game is over
 
-### `pass`
+## JSON Output
 
-Pass the turn.
+All CLI commands print machine-readable JSON on stdout.
 
-```bash
-python3 go_ref.py pass --color black
-python3 go_ref.py pass --branch semeai-1 --color white
-```
+Successful responses include:
 
-Behavior:
+- `ok: true`
+- `command`
+- `result`
 
-- pass is legal while the game is active
-- a pass clears any ko restriction
-- two consecutive passes end the game
+Mutating and query responses include a `target` object in `result` describing
+which game or session was addressed.
 
-### `resign`
+Errors print a short human message on stderr and machine-readable JSON on
+stdout with:
 
-Resign the game.
-
-```bash
-python3 go_ref.py resign --color white
-```
-
-Behavior:
-
-- resignation ends the game immediately
-- the board does not change
-
-### `legal`
-
-List all legal board moves for a color:
-
-```bash
-python3 go_ref.py legal --color black
-```
-
-Check one specific move:
-
-```bash
-python3 go_ref.py legal --color black --move D5
-```
-
-This command is for mechanical legality only.
-
-### `chain`
-
-Inspect the chain and liberties at a point.
-
-```bash
-python3 go_ref.py chain --point D4
-```
-
-Use `query chain` when you want richer tactical context.
-
-### `query`
-
-Ask structured tactical questions without changing state.
-
-Inspect one point:
-
-```bash
-python3 go_ref.py query point --point E5
-```
-
-Inspect a chain with adjacent-chain data:
-
-```bash
-python3 go_ref.py query chain --point D4
-```
-
-Summarize all chains and empty regions:
-
-```bash
-python3 go_ref.py query board
-```
-
-Every `query` command also accepts `--branch <name>`.
-
-### `try`
-
-Read hypothetical lines without mutating canonical or branch files.
-
-Try one move:
-
-```bash
-python3 go_ref.py try play --color black --move E4
-```
-
-Get a structured legality explanation:
-
-```bash
-python3 go_ref.py try legality --color black --move E4
-```
-
-Try a short sequence:
-
-```bash
-python3 go_ref.py try sequence --moves "B:E4,W:D4,B:F4"
-```
-
-Every `try` command also accepts `--branch <name>`.
-
-### `branch`
-
-Manage persisted hypothetical branches.
-
-Create a branch from canonical:
-
-```bash
-python3 go_ref.py branch create --name semeai-1
-```
-
-Create a branch from another branch:
-
-```bash
-python3 go_ref.py branch create --name ko-read --from-branch semeai-1
-```
-
-List branches:
-
-```bash
-python3 go_ref.py branch list
-```
-
-Show one branch:
-
-```bash
-python3 go_ref.py branch show --name semeai-1
-```
-
-Reset a branch from canonical:
-
-```bash
-python3 go_ref.py branch reset --name semeai-1 --from canonical
-```
-
-Reset a branch from another branch:
-
-```bash
-python3 go_ref.py branch reset --name ko-read --from branch --source semeai-1
-```
-
-Delete a branch:
-
-```bash
-python3 go_ref.py branch delete --name ko-read
-```
-
-Branch commands never mutate canonical `state.json` or `game.txt`.
-
-### `validate`
-
-Validate that the stored state is internally consistent.
-
-```bash
-python3 go_ref.py validate
-python3 go_ref.py validate --branch center-fight
-```
-
-This checks:
-
-- board shape
-- move log consistency
-- last move consistency
-- ko validity
-- replay consistency from the move log
-
-### `render`
-
-Regenerate `game.txt` from the current state.
-
-```bash
-python3 go_ref.py render
-python3 go_ref.py render --branch center-fight
-```
-
-Use this to refresh a rendered board view without changing state. You should
-not need this after a successful `play`, `pass`, `resign`, or `undo`, because
-those commands already refresh the rendered board for their target.
-
-### `undo`
-
-Undo the most recent move:
-
-```bash
-python3 go_ref.py undo
-python3 go_ref.py undo --branch center-fight
-```
-
-Undo multiple moves:
-
-```bash
-python3 go_ref.py undo --count 2
-```
-
-This rewinds state and refreshes the rendered board view for that target.
-
-## Output Conventions
-
-All commands are designed for tool-assisted use.
-
-- stdout
-  - JSON only
-- stderr
-  - human-readable diagnostics
-- exit code
-  - `0` on success
-  - nonzero on failure
+- `ok: false`
+- `command`
+- `error.code`
+- `error.message`
+- `error.details`

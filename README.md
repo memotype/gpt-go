@@ -1,95 +1,81 @@
 # Go Referee CLI
 
-This repo provides a 9x9 Go referee and tactical inspection toolkit built for
-Codex-driven play and for contributors improving that tooling. The referee is a
-deterministic rules and state-management layer: it owns legality, captures, ko,
-chains, liberties, move history, and rendered board output, while the player or
-calling agent owns strategy.
+This repo provides a 9x9 Go referee and analysis workspace for Codex-driven
+play and development. The referee owns deterministic game mechanics and state
+transitions. Strategy stays outside the tool.
 
-## What This Project Is For
+## Core Model
 
-- running a canonical 9x9 Go game through a CLI
-- inspecting tactical facts without hand-managing board state
-- simulating short lines and persisted analysis branches
-- generating a human-readable `game.txt` view from authoritative state
-- evolving the tooling used by "Player Codex" to play and analyze games
+- `state.json`
+  - authoritative canonical game state
+- `game.txt`
+  - generated human-readable rendering of canonical state
+- `analysis/sessions/<name>/state.json`
+  - authoritative state for one analysis session
+- `analysis/sessions/<name>/game.txt`
+  - generated rendering for one analysis session
+- `analysis/sessions/<name>/meta.json`
+  - session metadata
+
+Canonical play lives under `game`. Hypothetical reading lives under
+`session`.
 
 ## Quickstart
 
-Start a fresh game:
+Start a fresh canonical game:
 
 ```bash
-python3 go_ref.py init
+python3 go_ref.py game init
 ```
 
-Play moves on the canonical game:
+Play on the canonical game:
 
 ```bash
-python3 go_ref.py play --color black --move E5
-python3 go_ref.py play --color white --move C3
+python3 go_ref.py game play --color black --move E5
+python3 go_ref.py game play --color white --move C3
 ```
 
-Inspect the current position:
+Inspect the canonical game:
 
 ```bash
-python3 go_ref.py show
-python3 go_ref.py query board
+python3 go_ref.py game show
+python3 go_ref.py game query board
 ```
 
-Read hypothetical lines without mutating the canonical game:
+Create an analysis session from canonical state:
 
 ```bash
-python3 go_ref.py try play --color black --move D4
-python3 go_ref.py try sequence --moves "B:D4,W:C4,B:E4"
+python3 go_ref.py session create --name center-read
+python3 go_ref.py session play --name center-read --color black --move D4
+python3 go_ref.py session query board --name center-read
+```
+
+Create an ephemeral session for quick reading:
+
+```bash
+python3 go_ref.py session temp --from game
 ```
 
 ## Architecture At A Glance
 
-- `state.json`
-  - authoritative machine-readable game state
-- `game.txt`
-  - generated human-readable board view
-- `go_ref.py`
-  - CLI surface, command dispatch, JSON/stderr contract
-- `referee.py`
-  - rules engine and tactical query logic
-- `render.py`
-  - deterministic renderer for `game.txt`
-- `analysis/branches/`
-  - persisted hypothetical workspaces with their own state and rendered board
-
-The key invariant is simple: `state.json` is the source of truth and
-`game.txt` is a deterministic projection of that state.
-
-## Documentation Map
-
+- [go_ref.py](./go_ref.py)
+  - CLI surface, target resolution, locking, JSON contract
+- [referee.py](./referee.py)
+  - rules engine, legality, captures, ko, tactical queries
+- [render.py](./render.py)
+  - deterministic text rendering
+- [models.py](./models.py)
+  - shared dataclasses and type aliases
 - [docs/reference/cli.md](./docs/reference/cli.md)
-  - canonical CLI and tool contract
-- [docs/agents/player/](./docs/agents/player/)
-  - Codex-as-player guidance for running a Go session
-- [docs/agents/coder/](./docs/agents/coder/)
-  - Codex-as-coder guidance for safely modifying this project
-- [CONTRIBUTING.md](./CONTRIBUTING.md)
-  - contributor workflow, expectations, and validation steps
-- [docs/legacy-ascii/](./docs/legacy-ascii/)
-  - historical manual-play artifacts and renderer regression references
-
-## License
-
-This repository uses a split license:
-
-- Source code and other software artifacts are licensed under
-  [MIT](./LICENSE).
-- Documentation, prompts, and governance text are licensed under
-  [CC BY 4.0](./LICENSE-docs).
-
-In practice, that means the Python code, tests, and tool outputs are MIT,
-while the Markdown documentation in the repo root and under `docs/` is
-Creative Commons Attribution 4.0 unless a file says otherwise.
+  - canonical CLI reference
+- [tests/test_go_ref.py](./tests/test_go_ref.py)
+  - rules, rendering, and CLI contract coverage
 
 ## Notes
 
-- Do not hand-edit `state.json` or `game.txt` during normal play.
-- Use the referee CLI as the source of truth for mechanics.
-- If you change the CLI, renderer, or state-transition behavior, update the
-  CLI reference docs and relevant tests together.
+- Do not hand-edit `state.json` or `game.txt` during normal work.
+- Mutating `game` and `session` commands update stored state and refresh the
+  matching rendered board.
+- Query-style commands stay non-mutating.
+- Same-target CLI commands remain serialized so concurrent processes do not
+  race state and rendered output.

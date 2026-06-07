@@ -9,173 +9,170 @@ playing a 9x9 Go game.
   chains, liberties, move history, and board state.
 - Never manage board state by hand.
 - Never edit `game.txt` directly.
-- Do not rely on visual inspection of `game.txt` alone when the referee can
-  answer the question directly.
 
-## Ruleset
+## Canonical Distinction
 
-- Games are played under Japanese rules with 6.5 komi.
-- The referee CLI is the authority on legal moves, captures, ko, passes,
-  resignation, move history, and board state.
-- The referee is not an engine and does not choose moves for Codex.
+The most important operational rule is:
 
-## Mission
+- `game` is the real game
+- `session` is hypothetical analysis
 
-When playing Black against a human or another agent, Codex should try to win.
+If a move should count in the real game, it must be recorded on `game`.
 
-Codex should:
+If a move is only for reading, comparison, or experimentation, it must be
+recorded in a `session`.
 
-- make its own strategic and tactical judgments
-- investigate candidate moves before playing them
-- use `query`, `try`, and `branch` proactively when useful
-- use deeper branch analysis when the position is sharp
-- avoid premature resignation
+Never analyze in a way that leaves doubt about whether a move was real or
+hypothetical.
 
-Codex should not:
+## Workflow
 
-- play the first legal move that comes to mind
-- use `legal` as a move picker
-- resign just because a group looks dead without serious tactical reading
+Canonical play lives under `game`:
 
-## Interaction Model
+- record real moves with `game play`, `game pass`, or `game resign`
+- inspect the live position with `game show` or `game query`
 
-- Communicate in short chat messages while the CLI manages the game.
-- Record White's move immediately when the user provides it.
-- Choose Black's move only after inspecting the updated canonical position.
-- If White enters an illegal move:
-  - do not record it
-  - do not play a Black response
-  - briefly explain that it is illegal and why
-  - ask for another White move
-- After Black submits a final move through the referee:
-  - stop
-  - report the move clearly
-  - ask for White's move
+Hypothetical reading lives under `session`:
 
-Keep user-facing communication brief. Do not print large state dumps unless
-needed.
+- create a session from canonical or another session
+- play hypothetical moves inside that session
+- query the session normally
+- delete or persist the session when done
 
-## Tactical Workflow
-
-Canonical play:
-
-- use canonical commands for the real game
-- inspect the canonical position with `show` or `query board`
-- record White's move immediately when it is provided
-- choose Black's move only after inspecting the updated canonical position
-
-Short tactical reading:
-
-- use `try play`
-- use `try sequence`
-
-Deeper tactical reading:
-
-- create a branch and analyze there with `--branch <name>`
-
-Never confuse branch outcomes with the canonical game state.
-
-## Move Selection Guidance
-
-Before every serious Black move:
-
-- inspect the canonical position
-- on 9x9, do not treat ordinary-looking moves as routine
-- assume each Black move on 9x9 needs a short adversarial read unless it is
-  clearly forced, a pass, or a resignation
-- compare serious candidates unless the move is clearly forced
-- use tactical tools to investigate uncertain candidates
-- use a branch when one short hypothetical line is not enough
-- treat liberty counts, connection, and legality as evidence, not proof that a
-  move is good
-- if White ignores a candidate, check what Black concretely gains
-- if White answers with the strongest obvious reply, check what Black still has
-- before reinforcing a group, prove the move does more than add connected
-  stones
-- reject moves that fail tactically
-- choose the move only after enough analysis to justify it
-
-Mandatory adversarial read for each serious candidate:
-
-1. State the candidate's intended purpose.
-2. Use `try play` or `try sequence` to verify its immediate consequences.
-3. Choose at least one strong White reply that tries to refute it.
-4. Read at least one Black continuation after that reply.
-5. Reject the candidate if the adversarial line leaves Black with no concrete
-   gain or plausible continuation.
-
-This adversarial read is mandatory for moves that mainly reinforce, connect,
-clean up shape, or increase liberties.
-
-If one short sequence is not enough to understand the result, create a branch
-and continue reading there before playing the canonical move.
-
-When the local position is sharp:
-
-- do not trust a candidate just because one short line looks good
-- read at least the two strongest obvious White replies to a tightening move
-- re-check whole-board urgency before answering a small-looking local move
-- prefer moves that preserve multiple forcing follow-ups over moves that merely
-  remove one liberty or make shape look tidy
-- if more than one forcing continuation still looks plausible after short
-  reads, switch to a branch before playing the canonical move
-
-Final blunder check before recording Black's move:
-
-1. What is White's strongest obvious reply?
-2. If White ignores the move, what did Black concretely gain?
-3. If the move mainly reinforces or connects, did it do more than add mass?
-4. Was the move tested with `try` or branch reading unless it is clearly
-   forced, a pass, or a resignation?
-
-Do not record the move until it passes this check.
-
-## Branch Usage
-
-Create a branch when:
-
-- the line is too deep for one short hypothetical read
-- multiple continuations need to be compared
-- you want to preserve a hypothetical line for further reading
-- the consequences of a move remain unclear after short tactical checks
-
-Recommended branch pattern:
-
-1. Create a branch from canonical or another branch.
-2. Use `play`, `query`, `try`, `undo`, and `show` with `--branch <name>`.
-3. Reset or delete the branch when it is no longer useful.
-
-## Resignation And Endgame
-
-Do not resign casually.
-
-Only resign after serious analysis when the position is clearly lost.
-
-Before resigning or conceding a major group:
-
-- verify tactical facts with `query`
-- read short forcing lines with `try sequence`
-- use a branch for deeper kill/save continuations when needed
-
-If the game reaches scoring or life-and-death discussion:
-
-- use verified mechanics plus Codex judgment
-- distinguish verified facts from inference
-- do not pretend the referee has made a scoring or life-and-death ruling
-
-## Communication Style
-
-- Be brief.
-- Report Black moves clearly.
-- Ask for White's move in coordinate form such as `C3`.
-- If White's move is illegal, explain briefly and ask for another move.
-- Do not provide long strategic essays unless explicitly asked.
-
-## Session Start
+## Start Of Game
 
 When beginning a new game:
 
-1. Initialize the canonical game with the referee.
-2. Inspect the starting state.
-3. Choose and record Black's first move through the CLI.
-4. Report the move and ask for White's reply.
+1. Initialize canonical state:
+
+```bash
+python3 go_ref.py game init
+```
+
+2. Inspect the empty board:
+
+```bash
+python3 go_ref.py game show
+python3 go_ref.py game query board
+```
+
+3. Choose and record Black's first move on canonical state:
+
+```bash
+python3 go_ref.py game play --color black --move E5
+```
+
+4. Report the move briefly and ask White for the next move.
+
+## On Each White Move
+
+When White provides a move:
+
+1. Record it immediately on canonical state:
+
+```bash
+python3 go_ref.py game play --color white --move D5
+```
+
+2. Inspect the updated position:
+
+```bash
+python3 go_ref.py game query board
+```
+
+3. If the move is illegal:
+   - do not record it
+   - do not play a Black reply
+   - explain briefly that it is illegal
+   - ask White for another move
+
+4. Only after recording and inspecting White's move should Black begin
+   analysis.
+
+## Recommended Session Workflow
+
+For most tactical reading, use an ephemeral session.
+
+Create one from the current canonical position:
+
+```bash
+python3 go_ref.py session temp --from game
+```
+
+This returns a generated session name such as `_tmp_ab12cd34`.
+
+Use that session name for analysis:
+
+```bash
+python3 go_ref.py session play --name _tmp_ab12cd34 --color black --move J7
+python3 go_ref.py session query --name _tmp_ab12cd34 board
+python3 go_ref.py session play --name _tmp_ab12cd34 --color white --move J9
+python3 go_ref.py session query --name _tmp_ab12cd34 chain --point J7
+```
+
+If you want to compare another line, create another session from canonical or
+from an existing session:
+
+```bash
+python3 go_ref.py session create --name top-race-b --from game
+python3 go_ref.py session create --name top-race-deeper --from session:top-race-b
+```
+
+If a temporary line becomes important enough to keep, persist it:
+
+```bash
+python3 go_ref.py session persist --name _tmp_ab12cd34 --as top-race-main
+```
+
+Delete sessions when they are no longer useful:
+
+```bash
+python3 go_ref.py session delete --name _tmp_ab12cd34
+```
+
+## Recommended Analysis Pattern
+
+1. Record the real opponent move immediately on `game`.
+2. Inspect the updated canonical position with `game query board`.
+3. Create an ephemeral or named `session` when reading candidates.
+4. Read candidate move `A` by playing it in the session.
+5. Query the resulting session state.
+6. Continue the line in the same session or fork a new session for another
+   candidate.
+7. Only after tactical reading is complete, record the chosen move on `game`.
+
+## Recording Black's Final Move
+
+Once analysis is complete, record the chosen move on canonical state:
+
+```bash
+python3 go_ref.py game play --color black --move J7
+```
+
+Then stop analysis, report the move clearly, and ask White for the next move.
+
+Do not leave the final move only inside a session.
+
+## Practical Routine
+
+This is the default operating pattern during a real game:
+
+1. White gives a move.
+2. Record it on `game`.
+3. Inspect canonical state with `game query board`.
+4. Create a temp session from `game`.
+5. Read one candidate line inside the temp session.
+6. Read another candidate in a different session if needed.
+7. Choose a move.
+8. Record the chosen move on `game`.
+9. Reply briefly to the user.
+
+Use this routine unless the move is clearly forced, a pass, or a resignation.
+
+## Communication Rules
+
+- Keep replies brief.
+- Report Black moves clearly.
+- Ask for White's move in coordinate form such as `C3`.
+- Do not dump large JSON outputs to the user unless specifically needed.
+- If a White move is illegal, explain briefly and ask for another move.

@@ -19,7 +19,7 @@ When making changes:
 - Never hand-edit `state.json` or `game.txt` during normal work.
 - Preserve the CLI contract:
   - mutating commands update state and refresh the rendered board
-  - `query` and `try` stay non-mutating
+  - `show`, `legal`, `chain`, and `query` stay non-mutating
   - same-target CLI commands stay serialized
 - Keep stdout machine-readable JSON for CLI commands.
 - Update docs and tests when behavior or contracts change.
@@ -28,7 +28,7 @@ Before considering the work complete:
 
 1. Run `python3 -m unittest discover -s tests -v`.
 2. Run `basedpyright`.
-3. If rendering or state transitions changed, run `python3 go_ref.py validate`.
+3. If rendering or state transitions changed, run `python3 go_ref.py game validate`.
 4. If Markdown changed, run `npm run lint:md`.
 ```
 

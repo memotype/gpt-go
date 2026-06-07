@@ -49,6 +49,12 @@ On each White move:
    - `python3 go_ref.py session temp --from game`
 4. Read candidate lines inside that session with `session play` and
    `session query`.
+   - If a candidate move or reply starts a forcing sequence, continue reading
+     in `session` until the forcing sequence ends, repeats, becomes a ko or
+     branch problem, or reaches the configured depth limit.
+   - Do not stop after one legal-looking reply while the opponent still has an
+     obvious forcing atari, capture, ko recapture, or immediate threat
+     involving the same chain.
 5. Record Black's final move only on `game`.
 ```
 

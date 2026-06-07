@@ -154,11 +154,50 @@ python3 go_ref.py session delete --name _tmp_ab12cd34
 1. Record the real opponent move immediately on `game`.
 2. Inspect the updated canonical position with `game query board`.
 3. Create an ephemeral or named `session` when reading candidates.
-4. Read candidate move `A` by playing it in the session.
+4. Start a candidate branch by playing the move in the session.
 5. Query the resulting session state.
-6. Continue the line in the same session or fork a new session for another
-   candidate.
+6. Continue the branch while forcing moves remain, or fork a new session for
+   another candidate.
 7. Only after tactical reading is complete, record the chosen move on `game`.
+
+## Forced-Line Reading
+
+Forced-line reading is required when a candidate move or White's obvious reply:
+
+- captures stones
+- gives atari
+- answers atari
+- creates or resolves ko
+- leaves the newly played Black chain or an adjacent Black chain with 1 or 2
+  liberties
+
+During forced-line reading, Codex must continue the branch while either side
+still has an obvious forcing move involving the same local chain or local
+capture race.
+
+For this protocol, a forcing move means a move that:
+
+- captures
+- puts the target chain in atari
+- answers atari
+- prevents immediate capture
+- creates or resolves ko
+
+Use `session` to continue the line until one of these is true:
+
+- the target chain is captured
+- the target chain is no longer under immediate forcing pressure
+- both sides have multiple plausible non-forcing choices
+- the line repeats or becomes a ko or branch problem
+- the read reaches a configured depth limit and must be summarized as
+  unresolved
+
+Reject a candidate if the forced-line read shows Black remains in a forced
+sequence without concrete gain.
+
+For this rule, "concrete gain" is Codex's tactical judgment about the branch
+result. It is not referee output and must not be inferred from the CLI as a
+move recommendation or life-and-death judgment.
 
 ## Recording Black's Final Move
 
@@ -180,11 +219,13 @@ This is the default operating pattern during a real game:
 2. Record it on `game`.
 3. Inspect canonical state with `game query board`.
 4. Create a temp session from `game`.
-5. Read one candidate line inside the temp session.
-6. Read another candidate in a different session if needed.
-7. Choose a move.
-8. Record the chosen move on `game`.
-9. Reply briefly to the user.
+5. Start a candidate branch inside the temp session.
+6. Continue that branch while forcing moves remain.
+7. Read another candidate in a different session if needed.
+8. Compare candidates only after the forcing phase ends or is declared
+   unresolved.
+9. Record the chosen move on `game`.
+10. Reply briefly to the user.
 
 Use this routine unless the move is clearly forced, a pass, or a resignation.
 

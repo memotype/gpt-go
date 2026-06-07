@@ -2,4 +2,7 @@ __pycache__/
 *.pyc
 node_modules/
 .state.json.lock
+state.json
+game.txt
+analysis/sessions/
 analysis/branches/.*.lock

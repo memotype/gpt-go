@@ -39,6 +39,23 @@ Hypothetical reading lives under `session`:
 - query the session normally
 - delete or persist the session when done
 
+## Command Ordering
+
+- Do not start a same-target read concurrently with a write it depends on.
+- If a later command must observe the result of an earlier command on the same
+  `game` or `session`, wait for the earlier command to finish before starting
+  the next one.
+- Use parallel execution only for independent work or for commands aimed at
+  different targets.
+
+Examples:
+
+- good: `game play`, wait for completion, then `game query board`
+- good: `game query board` while separately reading docs or inspecting another
+  unrelated file
+- bad: launching `game play` and `game query board` together when the query is
+  meant to reflect that move
+
 ## Start Of Game
 
 When beginning a new game:
@@ -48,6 +65,8 @@ When beginning a new game:
 ```bash
 python3 go_ref.py game init
 ```
+
+This also clears any leftover analysis sessions from earlier games.
 
 2. Inspect the empty board:
 

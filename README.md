@@ -28,6 +28,9 @@ Start a fresh canonical game:
 python3 go_ref.py game init
 ```
 
+Starting a fresh canonical game also clears any existing analysis sessions from
+earlier games.
+
 Play on the canonical game:
 
 ```bash
@@ -78,4 +81,5 @@ python3 go_ref.py session temp --from game
   matching rendered board.
 - Query-style commands stay non-mutating.
 - Same-target CLI commands remain serialized so concurrent processes do not
-  race state and rendered output.
+  race state and rendered output, and single-target commands run in arrival
+  order.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -78,6 +79,31 @@ def extract_legacy_moves() -> list[MoveRecord]:
             )
         )
     return move_log
+
+
+def read_lock_queue_ticket(path: Path) -> int:
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return 0
+    payload = json.loads(raw)
+    next_ticket = payload.get("next_ticket", 0)
+    if not isinstance(next_ticket, int):
+        raise AssertionError(f"Invalid queued lock state at {path}")
+    return next_ticket
+
+
+def wait_for_lock_queue(path: Path, *, minimum_next_ticket: int, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            next_ticket = read_lock_queue_ticket(path)
+        except (FileNotFoundError, json.JSONDecodeError):
+            time.sleep(0.01)
+            continue
+        if next_ticket >= minimum_next_ticket:
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"Timed out waiting for queued lock state at {path}")
 
 
 class RefereeRulesTests(unittest.TestCase):
@@ -511,6 +537,63 @@ class CliTests(unittest.TestCase):
             rendered = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
             self.assertIn("(X)", rendered)
 
+    def test_cli_parallel_play_and_query_observe_a_consistent_game_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            lock_path = Path(tmpdir, ".state.json.lock")
+
+            for _ in range(20):
+                ticket_before = read_lock_queue_ticket(lock_path) if lock_path.exists() else 0
+                play_process = subprocess.Popen(
+                    ["python3", str(REPO_ROOT / "go_ref.py"), "game", "play", "--color", "black", "--move", "E5"],
+                    cwd=tmpdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                wait_for_lock_queue(lock_path, minimum_next_ticket=ticket_before + 1)
+                query_process = subprocess.Popen(
+                    ["python3", str(REPO_ROOT / "go_ref.py"), "game", "query", "board"],
+                    cwd=tmpdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+                play_stdout, play_stderr = play_process.communicate()
+                query_stdout, query_stderr = query_process.communicate()
+
+                self.assertEqual(play_process.returncode, 0, msg=play_stderr)
+                self.assertEqual(query_process.returncode, 0, msg=query_stderr)
+                self.assertTrue(json.loads(play_stdout)["ok"])
+
+                query_payload = json.loads(query_stdout)
+                self.assertTrue(query_payload["ok"])
+                self.assertEqual(query_payload["result"]["chain_summary"]["black_chain_count"], 1)
+                self.assertEqual(query_payload["result"]["side_to_move"], "white")
+
+                self.run_cli(tmpdir, "game", "undo")
+
+    def test_game_init_clears_existing_sessions_and_reports_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "game", "play", "--color", "black", "--move", "E5")
+            self.run_cli(tmpdir, "session", "create", "--name", "saved-read")
+            temp_created = json.loads(self.run_cli(tmpdir, "session", "temp").stdout)
+            temp_name = temp_created["result"]["session"]["name"]
+            self.assertTrue(Path(tmpdir, "analysis/sessions", "saved-read").exists())
+            self.assertTrue(Path(tmpdir, "analysis/sessions", temp_name).exists())
+
+            init_payload = json.loads(self.run_cli(tmpdir, "game", "init").stdout)
+            self.assertTrue(init_payload["ok"])
+            self.assertEqual(init_payload["result"]["state"]["move_number"], 0)
+            self.assertEqual(sorted(init_payload["result"]["sessions_cleared"]), sorted(["saved-read", temp_name]))
+
+            listed = json.loads(self.run_cli(tmpdir, "session", "list").stdout)
+            self.assertEqual(listed["result"]["sessions"], [])
+            self.assertFalse(Path(tmpdir, "analysis/sessions", "saved-read").exists())
+            self.assertFalse(Path(tmpdir, "analysis/sessions", temp_name).exists())
+
     def test_session_lifecycle_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             self.run_cli(tmpdir, "game", "init")
@@ -720,6 +803,42 @@ class CliTests(unittest.TestCase):
 
             rendered = Path(tmpdir, "analysis/sessions/race/game.txt").read_text(encoding="utf-8")
             self.assertIn("(X)", rendered)
+
+    def test_same_session_parallel_play_and_query_leave_session_state_consistent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "session", "create", "--name", "race")
+
+            for _ in range(20):
+                play_process = subprocess.Popen(
+                    ["python3", str(REPO_ROOT / "go_ref.py"), "session", "play", "--name", "race", "--color", "black", "--move", "E5"],
+                    cwd=tmpdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                query_process = subprocess.Popen(
+                    ["python3", str(REPO_ROOT / "go_ref.py"), "session", "query", "--name", "race", "board"],
+                    cwd=tmpdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+                play_stdout, play_stderr = play_process.communicate()
+                query_stdout, query_stderr = query_process.communicate()
+
+                self.assertEqual(play_process.returncode, 0, msg=play_stderr)
+                self.assertEqual(query_process.returncode, 0, msg=query_stderr)
+                self.assertTrue(json.loads(play_stdout)["ok"])
+
+                query_payload = json.loads(query_stdout)
+                self.assertTrue(query_payload["ok"])
+
+                shown = json.loads(self.run_cli(tmpdir, "session", "show", "--name", "race").stdout)
+                self.assertEqual(shown["result"]["state"]["move_number"], 1)
+
+                self.run_cli(tmpdir, "session", "undo", "--name", "race")
 
 
 if __name__ == "__main__":

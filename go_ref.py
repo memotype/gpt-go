@@ -6,6 +6,7 @@ import fcntl
 import json
 import shutil
 import sys
+import time
 import uuid
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -129,6 +130,15 @@ def session_target(name: str) -> Target:
     )
 
 
+def session_collection_target() -> Target:
+    return Target(
+        kind="session_collection",
+        name=None,
+        state_path=SESSIONS_ROOT / ".collection",
+        game_path=SESSIONS_ROOT / ".collection",
+    )
+
+
 def ensure_session_exists(name: str) -> Target:
     target = session_target(name)
     if not target.state_path.exists() or target.meta_path is None or not target.meta_path.exists():
@@ -239,13 +249,73 @@ def touch_session_meta(target: Target) -> None:
 def lock_path_for_target(target: Target) -> Path:
     if target.kind == "game":
         return target.state_path.with_name(f".{target.state_path.name}.lock")
+    if target.kind == "session_collection":
+        SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
+        return SESSIONS_ROOT / ".collection.lock"
     session_name = target.name or "session"
     SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
     return SESSIONS_ROOT / f".{session_name}.lock"
 
 
+def read_lock_queue(path: Path) -> tuple[int, int]:
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return (0, 0)
+    if not raw:
+        return (0, 0)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RefereeError("invalid_lock_state", f"Invalid lock queue in {path}: {exc.msg}") from exc
+    next_ticket = payload.get("next_ticket", 0)
+    serving_ticket = payload.get("serving_ticket", 0)
+    if not isinstance(next_ticket, int) or not isinstance(serving_ticket, int):
+        raise RefereeError("invalid_lock_state", f"Invalid lock queue in {path}", {"path": str(path)})
+    return (next_ticket, serving_ticket)
+
+
+def write_lock_queue(path: Path, next_ticket: int, serving_ticket: int) -> None:
+    payload = {"next_ticket": next_ticket, "serving_ticket": serving_ticket}
+    path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+
+
+@contextlib.contextmanager
+def queued_target_lock(target: Target) -> Generator[None, None, None]:
+    lock_path = lock_path_for_target(target)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        next_ticket, serving_ticket = read_lock_queue(lock_path)
+        my_ticket = next_ticket
+        write_lock_queue(lock_path, next_ticket + 1, serving_ticket)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+        while True:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            next_ticket, serving_ticket = read_lock_queue(lock_path)
+            if serving_ticket == my_ticket:
+                break
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            time.sleep(0.001)
+
+        try:
+            yield
+        finally:
+            next_ticket, serving_ticket = read_lock_queue(lock_path)
+            write_lock_queue(lock_path, next_ticket, serving_ticket + 1)
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
 @contextlib.contextmanager
 def locked_targets(*targets: Target) -> Generator[None, None, None]:
+    if len(targets) == 1:
+        with queued_target_lock(targets[0]):
+            yield
+        return
     unique_targets = {str(target.state_path.resolve()): target for target in targets}
     lock_files: list[TextIO] = []
     try:
@@ -352,12 +422,35 @@ def parse_color(value: str) -> Color:
     return cast(Color, value)
 
 
+def clear_sessions_root() -> dict[str, object]:
+    deleted_sessions: list[str] = []
+    deleted_lock_files: list[str] = []
+    if not SESSIONS_ROOT.exists():
+        return {"deleted_sessions": deleted_sessions, "deleted_lock_files": deleted_lock_files}
+    for entry in sorted(SESSIONS_ROOT.iterdir(), key=lambda item: item.name):
+        if entry.is_dir():
+            deleted_sessions.append(entry.name)
+            shutil.rmtree(entry)
+            continue
+        if entry.is_file() and entry.name.endswith(".lock"):
+            deleted_lock_files.append(entry.name)
+            entry.unlink()
+    return {"deleted_sessions": deleted_sessions, "deleted_lock_files": deleted_lock_files}
+
+
 def init_game_command() -> dict[str, object]:
     target = game_target()
     state = GameState.new_game()
     save_target_state(target, state)
     render_target(target, state)
-    return {"target": target_payload(target), "created": True, "state": state_summary(state)}
+    cleanup = clear_sessions_root()
+    return {
+        "target": target_payload(target),
+        "created": True,
+        "state": state_summary(state),
+        "sessions_cleared": cleanup["deleted_sessions"],
+        "session_lock_files_cleared": cleanup["deleted_lock_files"],
+    }
 
 
 def show_command(target: Target) -> dict[str, object]:
@@ -562,8 +655,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if command == "game":
             target = game_target()
-            with locked_targets(target):
-                game_command = cast(str, args.game_command)
+            game_command = cast(str, args.game_command)
+            lock_targets: tuple[Target, ...] = (target,)
+            if game_command == "init":
+                lock_targets = (target, session_collection_target())
+            with locked_targets(*lock_targets):
                 if game_command == "init":
                     result = init_game_command()
                 elif game_command == "show":
@@ -598,36 +694,38 @@ def main(argv: list[str] | None = None) -> int:
                     raise RefereeError("unknown_command", "Unknown game command", {"command": game_command})
         elif command == "session":
             session_command = cast(str, args.session_command)
+            collection_target = session_collection_target()
             if session_command == "create":
                 destination = session_target(cast(str, args.name))
                 source = parse_source_spec(cast(str, args.source))
-                with locked_targets(source, destination):
+                with locked_targets(collection_target, source, destination):
                     result = session_create_command(cast(str, args.name), cast(str, args.source), kind="persistent")
             elif session_command == "temp":
                 temp_name = session_temp_name()
                 destination = session_target(temp_name)
                 source = parse_source_spec(cast(str, args.source))
-                with locked_targets(source, destination):
+                with locked_targets(collection_target, source, destination):
                     result = session_create_command(temp_name, cast(str, args.source), kind="ephemeral")
             elif session_command == "list":
-                result = session_list_command()
+                with locked_targets(collection_target):
+                    result = session_list_command()
             elif session_command == "delete":
                 target = ensure_session_exists(cast(str, args.name))
-                with locked_targets(target):
+                with locked_targets(collection_target, target):
                     result = session_delete_command(cast(str, args.name))
             elif session_command == "persist":
                 source = ensure_session_exists(cast(str, args.name))
                 destination = session_target(cast(str, args.new_name))
-                with locked_targets(source, destination):
+                with locked_targets(collection_target, source, destination):
                     result = session_persist_command(cast(str, args.name), cast(str, args.new_name))
             elif session_command == "reset":
                 destination = ensure_session_exists(cast(str, args.name))
                 source = parse_source_spec(cast(str, args.source))
-                with locked_targets(source, destination):
+                with locked_targets(collection_target, source, destination):
                     result = session_reset_command(cast(str, args.name), cast(str, args.source))
             else:
                 target = ensure_session_exists(cast(str, args.name))
-                with locked_targets(target):
+                with locked_targets(collection_target, target):
                     if session_command == "show":
                         result = show_command(target)
                     elif session_command == "play":

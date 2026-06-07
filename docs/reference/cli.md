@@ -109,6 +109,10 @@ These do not mutate stored state:
 Commands aimed at the same canonical game or the same session are serialized by
 the CLI so concurrent processes cannot race `state.json` and `game.txt`.
 
+For single-target commands, the CLI also preserves arrival order. If `game play`
+reaches the referee before `game query board` on the same target, the query
+will observe that move rather than an earlier snapshot.
+
 ## Canonical Game Commands
 
 Start or reset the canonical game:
@@ -116,6 +120,9 @@ Start or reset the canonical game:
 ```bash
 python3 go_ref.py game init
 ```
+
+`game init` also clears any existing analysis sessions so a new canonical game
+starts with a fresh analysis workspace.
 
 Inspect canonical state:
 

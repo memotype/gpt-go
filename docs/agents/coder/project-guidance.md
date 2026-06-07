@@ -24,6 +24,52 @@ This document is for Codex acting as a coding assistant inside this repo.
 - Keep human diagnostics on stderr.
 - Prefer explicit state and target models over clever inference-heavy behavior.
 
+## Guidance For Player-Protocol Changes
+
+When updating player prompts or gameplay-governance docs, optimize for better
+judgment, not more ritual.
+
+- Good changes add guardrails against known failure modes such as stopping
+  reading too early, confusing legality with quality, or trusting one-ply
+  severity without checking the opponent's strongest reply.
+- Good changes preserve room for Codex to reason about shape, life, thickness,
+  sacrifice, efficiency, and whole-board tradeoffs.
+- Avoid turning strategy guidance into a move-selection algorithm or rigid
+  checklist.
+- Prefer principle-based wording over over-prescriptive procedures.
+
+In general:
+
+- hard rules should protect mechanics, state discipline, and forced-line
+  reading hygiene
+- strategic guidance should stay flexible and judgment-oriented
+
+If a docs change would make Codex more compliant but less thoughtful, revise it
+toward clearer principles instead of adding more steps.
+
+## Experimental Boundary
+
+This repo exists to study GPT/Codex's ability to reason about Go without
+quietly turning the referee or tool layer into a Go engine.
+
+Treat the tools as:
+
+- Codex's eyes into the position
+- Codex's working memory for canonical and hypothetical state
+- Codex's source of deterministic mechanics
+
+Do not turn the tools into:
+
+- a move recommender
+- a candidate ranker
+- a life-and-death oracle
+- a territory or score judge
+- a hidden strategic policy encoded in Python
+
+In short, the referee and session workspace may manage state, legality,
+captures, ko, rendering, and tactical inspection, but the actual Go judgment
+should remain in Codex's reasoning rather than being smuggled into the tools.
+
 ## Code Areas
 
 - [go_ref.py](../../../go_ref.py)

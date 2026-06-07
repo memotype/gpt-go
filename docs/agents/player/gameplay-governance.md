@@ -151,18 +151,27 @@ python3 go_ref.py session delete --name _tmp_ab12cd34
 
 ## Recommended Analysis Pattern
 
-1. Record the real opponent move immediately on `game`.
+Use `session` to think before you commit, but do not turn analysis into a
+ritual. The important ground rules are:
+
+1. Record White's real move immediately on `game`.
 2. Inspect the updated canonical position with `game query board`.
-3. Create an ephemeral or named `session` when reading candidates.
-4. Start a candidate branch by playing the move in the session.
-5. Query the resulting session state.
-6. Continue the branch while forcing moves remain, or fork a new session for
-   another candidate.
-7. Only after tactical reading is complete, record the chosen move on `game`.
+
+After that, let the position determine the reading. In general:
+
+- use `session` when Black needs tactical reading
+- keep reading while the local fight is forcing or unstable
+- compare sharp moves against calmer shape when the forcing line fizzles
+- record Black's chosen move on `game` only after the choice is clear enough
+
+This is not a move-selection algorithm. The point is to keep real play and
+hypothetical reading separate while giving Codex room to judge shape, life,
+efficiency, and whole-board tradeoffs.
 
 ## Forced-Line Reading
 
-Forced-line reading is required when a candidate move or White's obvious reply:
+Forced-line reading is required when the position is tactically hot, especially
+if a candidate move or White's obvious reply:
 
 - captures stones
 - gives atari
@@ -171,9 +180,8 @@ Forced-line reading is required when a candidate move or White's obvious reply:
 - leaves the newly played Black chain or an adjacent Black chain with 1 or 2
   liberties
 
-During forced-line reading, Codex must continue the branch while either side
-still has an obvious forcing move involving the same local chain or local
-capture race.
+During forced-line reading, keep following the branch while either side still
+has an obvious forcing move involving the same local chain or capture race.
 
 For this protocol, a forcing move means a move that:
 
@@ -192,12 +200,47 @@ Use `session` to continue the line until one of these is true:
 - the read reaches a configured depth limit and must be summarized as
   unresolved
 
-Reject a candidate if the forced-line read shows Black remains in a forced
-sequence without concrete gain.
+Reject a candidate if the forced-line read shows Black remains under pressure
+without getting enough in return.
 
 For this rule, "concrete gain" is Codex's tactical judgment about the branch
 result. It is not referee output and must not be inferred from the CLI as a
 move recommendation or life-and-death judgment.
+
+## Candidate Discipline
+
+Do not treat a move as good merely because it:
+
+- reduces an enemy chain's liberties
+- creates an atari threat that White can answer comfortably
+- looks active or severe for one ply
+
+Before trusting a sharp local move, read White's strongest obvious local reply
+first. This matters most when Black's move:
+
+- leans on a chain without taking liberties away to 1 immediately
+- creates a new Black chain with only 1 or 2 liberties
+- invites an immediate atari on the newly played Black chain
+- starts a contact fight next to an already unsettled Black chain
+
+Be suspicious of the candidate if White's best reply:
+
+- drives Black into an immediate defensive sequence
+- lets White connect or extend while Black gains no capture, thickness, or
+  stable shape
+- leaves Black less settled than a calmer alternative after the forcing
+  sequence ends
+
+When a sharp candidate fizzles, prefer the calmer move that leaves Black with
+better shape or a cleaner position.
+
+Do not confuse short-term severity with profit. A move that looks active for
+one ply may still be poor if White's natural answer leaves Black heavy, thin,
+or forced low.
+
+Likewise, do not stop reading just because Black found a legal move that saves
+one stone or answers one atari. Continue until the local fight is actually
+stable, or until the candidate is clearly worse than a quieter alternative.
 
 ## Recording Black's Final Move
 
@@ -213,21 +256,15 @@ Do not leave the final move only inside a session.
 
 ## Practical Routine
 
-This is the default operating pattern during a real game:
+As a default rhythm during real play:
 
-1. White gives a move.
-2. Record it on `game`.
-3. Inspect canonical state with `game query board`.
-4. Create a temp session from `game`.
-5. Start a candidate branch inside the temp session.
-6. Continue that branch while forcing moves remain.
-7. Read another candidate in a different session if needed.
-8. Compare candidates only after the forcing phase ends or is declared
-   unresolved.
-9. Record the chosen move on `game`.
-10. Reply briefly to the user.
+1. Put White's move on `game`.
+2. Inspect the canonical position.
+3. Use `session` for any tactical reading Black needs.
+4. Keep reading while the local position is forcing or unstable.
+5. Commit the real Black move on `game` once the choice is clear enough.
 
-Use this routine unless the move is clearly forced, a pass, or a resignation.
+Use this rhythm unless the move is trivially forced, a pass, or a resignation.
 
 ## Communication Rules
 

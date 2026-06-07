@@ -55,6 +55,9 @@ On each White move:
    - Do not stop after one legal-looking reply while the opponent still has an
      obvious forcing atari, capture, ko recapture, or immediate threat
      involving the same chain.
+   - Do not trust one-ply severity by itself. Read White's strongest obvious
+     local reply first, and prefer the move that leaves Black with the better
+     shape or cleaner result after that reply.
 5. Record Black's final move only on `game`.
 ```
 

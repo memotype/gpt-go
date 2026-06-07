@@ -841,5 +841,35 @@ class CliTests(unittest.TestCase):
                 self.run_cli(tmpdir, "session", "undo", "--name", "race")
 
 
+class PlayerDocsTests(unittest.TestCase):
+    def test_gameplay_governance_requires_strongest_reply_check_for_sharp_candidates(self) -> None:
+        text = (REPO_ROOT / "docs" / "agents" / "player" / "gameplay-governance.md").read_text(encoding="utf-8")
+        self.assertIn("After that, let the position determine the reading.", text)
+        self.assertIn("This is not a move-selection algorithm.", text)
+        self.assertIn("Before trusting a sharp local move, read White's strongest obvious local reply", text)
+        self.assertIn("Do not confuse short-term severity with profit.", text)
+        self.assertIn("Continue until the local fight is actually", text)
+        self.assertIn("stable, or until the candidate is clearly worse", text)
+
+    def test_session_prompt_warns_against_one_ply_sharp_moves(self) -> None:
+        text = (REPO_ROOT / "docs" / "agents" / "player" / "session-prompt.md").read_text(encoding="utf-8")
+        self.assertIn("Do not trust one-ply severity by itself.", text)
+        self.assertIn("Read White's strongest obvious", text)
+        self.assertIn("better", text)
+        self.assertIn("shape or cleaner result", text)
+
+    def test_coder_guidance_prefers_principles_over_ritual_for_player_docs(self) -> None:
+        text = (REPO_ROOT / "docs" / "agents" / "coder" / "project-guidance.md").read_text(encoding="utf-8")
+        self.assertIn("optimize for better", text)
+        self.assertIn("judgment, not more ritual", text)
+        self.assertIn("Prefer principle-based wording over over-prescriptive procedures.", text)
+        self.assertIn("If a docs change would make Codex more compliant but less thoughtful", text)
+        self.assertIn("This repo exists to study GPT/Codex's ability to reason about Go", text)
+        self.assertIn("Treat the tools as:", text)
+        self.assertIn("Codex's eyes into the position", text)
+        self.assertIn("Do not turn the tools into:", text)
+        self.assertIn("a move recommender", text)
+
+
 if __name__ == "__main__":
     unittest.main()

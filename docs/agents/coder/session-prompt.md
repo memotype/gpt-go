@@ -3,6 +3,12 @@
 Use this as the thin session-start prompt for Codex when starting a coding
 session in this repo:
 
+This prompt is intentionally thin. The detailed coding guidance lives in:
+
+- [../../reference/cli.md](../../reference/cli.md)
+- [./project-guidance.md](./project-guidance.md)
+- [../../../CONTRIBUTING.md](../../../CONTRIBUTING.md)
+
 ```md
 We are working in the 9x9 Go referee repo.
 
@@ -31,9 +37,3 @@ Before considering the work complete:
 3. If rendering or state transitions changed, run `python3 go_ref.py game validate`.
 4. If Markdown changed, run `npm run lint:md`.
 ```
-
-This prompt is intentionally thin. The detailed coding guidance lives in:
-
-- [../../reference/cli.md](../../reference/cli.md)
-- [./project-guidance.md](./project-guidance.md)
-- [../../../CONTRIBUTING.md](../../../CONTRIBUTING.md)

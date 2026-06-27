@@ -376,10 +376,11 @@ class TacticalQueryTests(unittest.TestCase):
 
 
 class RendererTests(unittest.TestCase):
-    def assert_board_rows_uniform_width(self, rendered: str) -> None:
-        board_rows = [line for line in rendered.splitlines() if line.startswith("  ") and line[2:3].isdigit()]
-        self.assertTrue(board_rows)
-        self.assertEqual(len({len(row) for row in board_rows}), 1)
+    def assert_last_event_on_top_row(self, rendered: str, last_event: str) -> None:
+        lines = rendered.splitlines()
+        self.assertIn(f"    A B C D E F G H J        Last move: {last_event}", lines)
+        self.assertIn(f"  9 . . . . . . . . . 9      Last event: {last_event}", lines)
+        self.assertNotIn(f"                       Last event: {last_event}", lines)
 
     def test_blank_board_matches_legacy_init(self) -> None:
         state = GameState.new_game()
@@ -393,24 +394,24 @@ class RendererTests(unittest.TestCase):
         rendered = render_text(state)
         self.assertIn("Status:       Active", rendered)
         self.assertIn("Last event: Black E5", rendered)
+        self.assert_last_event_on_top_row(rendered, "Black E5")
         self.assertIn("(X)", rendered)
         self.assertNotIn("+", next(line for line in rendered.splitlines() if line.startswith("  5 ")))
         self.assertIn("  5 . . . .(X). . . . 5", rendered)
-        self.assert_board_rows_uniform_width(rendered)
 
     def test_left_edge_last_move_stays_aligned(self) -> None:
         state = GameState.new_game()
         apply_play(state, "black", "A5")
         rendered = render_text(state)
         self.assertIn("  5(X). . . + . . . . 5", rendered)
-        self.assert_board_rows_uniform_width(rendered)
+        self.assert_last_event_on_top_row(rendered, "Black A5")
 
     def test_right_edge_last_move_stays_aligned(self) -> None:
         state = GameState.new_game()
         apply_play(state, "black", "J5")
         rendered = render_text(state)
         self.assertIn("  5 . . . . + . . .(X)5", rendered)
-        self.assert_board_rows_uniform_width(rendered)
+        self.assert_last_event_on_top_row(rendered, "Black J5")
 
     def test_no_parentheses_after_pass_and_stale_ko_removal(self) -> None:
         state = configure_position(
@@ -423,6 +424,7 @@ class RendererTests(unittest.TestCase):
         apply_pass(state, "black")
         rendered = render_text(state)
         self.assertIn("Last event: Black pass", rendered)
+        self.assertIn("  9 . . . . . . . . . 9      Last event: Black pass", rendered)
         board_rows = [line for line in rendered.splitlines() if line.startswith("  ") and line[2:3].isdigit()]
         self.assertEqual(sum(row.count("(X)") + row.count("(O)") for row in board_rows), 0)
         self.assertNotIn("~", rendered)
@@ -434,11 +436,16 @@ class RendererTests(unittest.TestCase):
         rendered = render_text(state)
         self.assertIn("Status:       Scoring", rendered)
         self.assertIn("Last event: White pass", rendered)
+        self.assertIn("  9 . . . . . . . . . 9      Last event: White pass", rendered)
 
         apply_finalize(state)
         finalized = render_text(state)
         self.assertIn("Status:       Finished", finalized)
         self.assertIn("Last event: Finalize game after scoring", finalized)
+        self.assertIn(
+            "  9 . . . . . . . . . 9      Last event: Finalize game after scoring",
+            finalized,
+        )
 
     def test_legacy_example_regression(self) -> None:
         move_log = extract_legacy_moves()
@@ -447,12 +454,12 @@ class RendererTests(unittest.TestCase):
         expected = (LEGACY_DIR / "game-example-manual-v1.txt").read_text(encoding="utf-8")
         self.assertEqual(rendered.rstrip("\n"), expected.rstrip("\n"))
 
-    def test_validate_rendered_text_rejects_misaligned_rows(self) -> None:
+    def test_validate_rendered_text_rejects_malformed_board_body(self) -> None:
         state = GameState.new_game()
         apply_play(state, "black", "A5")
         rendered = render_text(state)
-        broken = rendered.replace("  5(X). . . + . . . . 5", "  5 (X). . . + . . . . 5")
-        with self.assertRaisesRegex(ValueError, "uniformly aligned"):
+        broken = rendered.replace("  5(X). . . + . . . . 5", "  5(X). . . + . . . .")
+        with self.assertRaisesRegex(ValueError, "missing trailing rank marker"):
             validate_rendered_text(state, broken)
 
 

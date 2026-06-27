@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.6 - 2026-06-27
+
+### Player Docs
+
+- Changed the player governance and session prompt docs to better distinguish
+  forced local replies from merely salient local issues, and to require
+  whole-board comparison once a local line stops being forcing.
+- Changed player-facing guidance to be more skeptical of repeated local
+  investment and interior-fill shape moves that improve local statistics
+  without changing the expected outcome.
+- Changed the player docs index to point readers toward the updated urgency and
+  whole-board comparison guidance.
+- Changed renderer output so `Last event` appears on the top board row instead
+  of creating a separate spacer line above the board.
+
+### Renderer
+
+- Fixed the rendered `game.txt` layout so adding `Last event` no longer creates
+  an awkward gap between the top coordinate header and the first board row.
+- Fixed renderer validation and regression coverage to support a trailing
+  top-row annotation without weakening board-body checks.
+
 ## 0.1.5 - 2026-06-27
 
 ### Added

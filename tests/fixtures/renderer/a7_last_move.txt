@@ -11,8 +11,7 @@ Ko:           none
     Black (X) has captured 0 pieces
 
     A B C D E F G H J        Last move: Black A7
-                       Last event: Black A7
-  9 . . . . . . . . . 9
+  9 . . . . . . . . . 9      Last event: Black A7
   8 . . . . . . . . . 8
   7(X). + . . . + . . 7
   6 . . . . . . . . . 6

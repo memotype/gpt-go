@@ -11,8 +11,7 @@ Ko:           none
     Black (X) has captured 1 pieces
 
     A B C D E F G H J        Last move: Black D9
-                       Last event: Black D9
-  9 . . .(X)O . O X . 9
+  9 . . .(X)O . O X . 9      Last event: Black D9
   8 . . . . . O . O . 8
   7 . O + O O X O . . 7
   6 X X O X X X . O . 6

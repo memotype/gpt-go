@@ -11,8 +11,7 @@ Ko:           none
     Black (X) has captured 0 pieces
 
     A B C D E F G H J        Last move: Black J5
-                       Last event: Black J5
-  9 . . . . . . . . . 9
+  9 . . . . . . . . . 9      Last event: Black J5
   8 . . . . . . . . . 8
   7 . . + . . . + . . 7
   6 . . . . . . . . . 6

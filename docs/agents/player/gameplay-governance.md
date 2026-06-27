@@ -169,7 +169,20 @@ After that, let the position determine the reading. In general:
 
 - use `session` when Black needs tactical reading
 - keep reading while the local fight is forcing or unstable
-- compare sharp moves against calmer shape when the forcing line fizzles
+- before treating a nearby local issue as mandatory, classify it:
+  - `forced`
+    - White has an immediate capture, atari, ko, decisive cut, forced
+      connection, or similarly concrete tactical consequence if Black tenukis
+  - `contestable`
+    - White can improve locally, but cannot force a decisive result immediately
+  - `open`
+    - there is no immediate local sequence requiring a reply
+- only `forced` issues should consume the turn by default
+- when a local line becomes `contestable` or `open`, stop treating that area
+  as the default plan and compare at least one candidate outside the current
+  local cluster
+- compare sharp moves against calmer shape only after deciding the local issue
+  is still truly urgent
 - record Black's chosen move on `game` only after the choice is clear enough
 
 This is not a move-selection algorithm. The point is to keep real play and
@@ -194,9 +207,40 @@ Reject the move as a successful defense if the post-move chain:
 - still faces the same forcing liberty shortage
 - still fails to answer the named threat after White's strongest obvious reply
 
+Do not approve a move merely because it changed liberty counts, relocated a
+shortage, or made the local facts look tidier on one ply. Ask whether the move
+changed the expected local outcome.
+
+Before investing another move in a weak Black group, name the credible endpoint
+the move is supposed to create, such as:
+
+- capture something
+- connect to independently safe stones
+- escape into open space
+- create stable internal space
+- obtain a forcing trade worth the remaining danger
+
+If no credible endpoint appears after concrete reading, reject repeated local
+investment even if the move preserves the current liberty count or avoids an
+ugly-looking shape for one turn.
+
+When a candidate occupies a current liberty or eye-space point of an already
+connected Black chain, treat it as suspect unless it does something concrete,
+such as:
+
+- gives atari or starts a real capture sequence
+- prevents a named enemy escape, connection, or invasion
+- creates an external route or expansion path for Black
+- secures a specific territorial boundary
+- resolves a forcing tactical problem
+
+State the effect on both Black's chain and the affected White chain. If the
+move only improves a local statistic without changing the expected result,
+compare it against an outward or whole-board candidate.
+
 This audit is not a universal liberty-threshold rule. The point is to check
 whether the move actually changed the tactical problem rather than just moving
-it around.
+it around, and whether the move produced a group worth continuing to invest in.
 
 ## Forced-Line Reading
 
@@ -238,8 +282,17 @@ Use `session` to continue the line until one of these is true:
 - the read reaches a configured depth limit and must be summarized as
   unresolved
 
+If the forcing sequence ends without a capture, atari, ko, decisive cut,
+forced connection, immediate escape, or similarly concrete result, stop
+treating that area as the default plan. Return to the whole board and compare
+at least one candidate that is not adjacent to the same focal Black chain.
+
 Reject a candidate if the forced-line read shows Black remains under pressure
 without getting enough in return.
+
+Do not treat "the move changed something" as sufficient proof. The forcing read
+must show a changed tactical or strategic outcome, not just a changed local
+statistic.
 
 For this rule, "concrete gain" is Codex's tactical judgment about the branch
 result. It is not referee output and must not be inferred from the CLI as a
@@ -258,17 +311,25 @@ Instead, consider candidates from distinct roles such as:
 - move elsewhere that takes profit or initiative from the opponent's local commitment
 - quiet move that secures a concrete result
 
+If no chain is currently in atari and no immediate capture, ko, or forcing cut
+has been identified, include at least one candidate that is not adjacent to the
+same focal Black chain. This candidate may still relate to the same side of the
+board, but it should test outward development, counterplay, or whole-board
+timing rather than another nearby maintenance move.
+
 This does not require a fixed number of candidates every turn. Use it when
 Black is in danger of drifting into one-track local play without comparing a
 different kind of idea.
 
 ## Candidate Discipline
 
-Do not treat a move as good merely because it:
+Do not treat a move as urgent or good merely because it:
 
 - reduces an enemy chain's liberties
 - creates an atari threat that White can answer comfortably
 - looks active or severe for one ply
+- is adjacent to the same weak group as the previous candidate
+- preserves a local liberty count without creating a credible endpoint
 
 Before trusting a sharp local move, read White's strongest obvious local reply
 first. This matters most when Black's move:
@@ -300,11 +361,15 @@ cleaner factual result after White's best reply.
 
 Do not confuse short-term severity with profit. A move that looks active for
 one ply may still be poor if White's natural answer leaves Black heavy, thin,
-or forced low.
+forced low, or still unable to claim worthwhile outside development.
 
 Likewise, do not stop reading just because Black found a legal move that saves
 one stone or answers one atari. Continue until the local fight is actually
 stable, or until the candidate is clearly worse than a quieter alternative.
+
+If the local fight is no longer `forced`, stop defaulting to nearby maintenance
+moves and compare at least one outward or non-local alternative before you
+commit.
 
 ## Pre-Commit Critique
 
@@ -318,6 +383,7 @@ it:
 - what gain it fails to create
 - what useful point it needlessly fills
 - what stronger opponent reply makes the move look hollow
+- whether the move is only preserving a local fact that is no longer urgent
 
 This critique should sound like post-game review, not advocacy. Analyze the
 candidate as if it were the move that lost the game.
@@ -360,6 +426,8 @@ Keep the reset brief. Ask:
 - which chains are now weak
 - which previous goals no longer matter
 - whether a more urgent area now exists
+- whether the old local fight has become `contestable` or `open` rather than
+  `forced`
 
 This is not a requirement to rescan the whole board after every move. It is a
 guardrail against stale plans surviving after the position changed materially.
@@ -389,6 +457,12 @@ unless you can translate the claim into a concrete board consequence such as:
 
 The purpose is not to ban positional language. The purpose is to make the
 reasoning falsifiable against the board.
+
+Do the same with urgency claims. Do not treat a local issue as urgent merely
+because it is nearby, because it changed recent liberties, or because it feels
+unfinished. Name the concrete result White obtains if Black plays elsewhere.
+If you cannot name one, the issue is probably `contestable` or `open`, not
+`forced`.
 
 ## Recording Black's Final Move
 

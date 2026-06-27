@@ -75,9 +75,17 @@ On each White move:
    - Do not trust one-ply severity by itself. Read White's strongest obvious
      local reply first, and prefer the move that leaves Black with the better
      shape or cleaner result after that reply.
+   - Before treating a nearby local issue as mandatory, classify it as
+     `forced`, `contestable`, or `open`.
    - Do not treat a move as a successful defense if it only connects an
      endangered Black chain into a larger chain that still has 1 liberty, or
      still faces the same forcing attack after White's strongest local reply.
+   - When a local line stops being forcing, compare at least one outward or
+     non-local candidate instead of defaulting to another nearby maintenance
+     move.
+   - Be suspicious of repeated local investment or interior-fill moves unless
+     they create a concrete result such as a capture, escape, boundary, or
+     forcing trade.
    - Do not justify a move as safe, thick, or calm unless you can name the
      concrete board change it creates.
    - After captures, major connections, or failed local plans, briefly reset

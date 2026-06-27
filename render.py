@@ -74,13 +74,16 @@ def join_render_cells(cells: list[str]) -> str:
     return body
 
 
-def render_row(state: GameState, row_number: int) -> str:
+def render_row(state: GameState, row_number: int, suffix: str | None = None) -> str:
     y = BOARD_SIZE - row_number
     cells = render_cells(state, y)
     body = join_render_cells(cells)
     left_separator = "" if cells[0].startswith("(") else " "
     right_separator = "" if cells[-1].endswith(")") else " "
-    return f"  {row_number}{left_separator}{body}{right_separator}{row_number}"
+    row = f"  {row_number}{left_separator}{body}{right_separator}{row_number}"
+    if suffix is not None:
+        row = f"{row}      {suffix}"
+    return row
 
 
 def render_move_log(state: GameState) -> list[str]:
@@ -119,10 +122,9 @@ def render_text(state: GameState) -> str:
     if last_move is not None:
         header = f"{header}        Last move: {last_move}"
     lines.append(header)
-    if last_event is not None:
-        lines.append(f"                       Last event: {last_event}")
     for row_number in range(BOARD_SIZE, 0, -1):
-        lines.append(render_row(state, row_number))
+        suffix = f"Last event: {last_event}" if row_number == BOARD_SIZE and last_event is not None else None
+        lines.append(render_row(state, row_number, suffix=suffix))
     lines.append("    A B C D E F G H J")
     lines.append("")
     lines.extend(render_move_log(state))
@@ -135,13 +137,13 @@ def validate_rendered_text(state: GameState, text: str) -> None:
     expected = 1 if state.last_move is not None and state.last_move.kind == "play" else 0
     if last_move_count != expected:
         raise ValueError("Rendered board has incorrect parenthesized last-move count")
-    row_lengths = {len(row) for row in board_rows}
-    if len(row_lengths) != 1:
-        raise ValueError("Rendered board rows are not uniformly aligned")
     for row_number in range(BOARD_SIZE, 0, -1):
         row_prefix = f"  {row_number}"
         row = next(line for line in text.splitlines() if line.startswith(row_prefix))
-        body = row[len(row_prefix) : -len(f"{row_number}")]
+        match = re.match(rf"^  {row_number}(.*?){row_number}(?:\s{{2,}}.*)?$", row)
+        if match is None:
+            raise ValueError(f"Rendered row {row_number} is missing trailing rank marker")
+        body = match.group(1)
         cells = re.findall(r"\([XO]\)|[.XO+~]", body)
         if len(cells) != BOARD_SIZE:
             raise ValueError(f"Rendered row {row_number} does not contain 9 intersections")

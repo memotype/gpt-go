@@ -8,6 +8,7 @@ Read these first:
 1. [../../reference/cli.md](../../reference/cli.md)
    - referee and CLI contract, plus concrete `game`/`session` command examples
 2. [./gameplay-governance.md](./gameplay-governance.md)
-   - move discipline, session-based analysis, and step-by-step play workflow
+   - move discipline, urgency classification, session-based reading hygiene,
+     and whole-board candidate comparison
 3. [./session-prompt.md](./session-prompt.md)
    - thin copy-pasteable prompt for starting a session

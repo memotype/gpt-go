@@ -9,8 +9,10 @@ from pathlib import Path
 
 from models import Color, GameState, MoveRecord
 from referee import (
+    apply_finalize,
     apply_pass,
     apply_play,
+    apply_resume,
     apply_resign,
     chain_at,
     explain_move_legality,
@@ -194,18 +196,48 @@ class RefereeRulesTests(unittest.TestCase):
         self.assertFalse(legal)
         self.assertEqual(reason, "ko")
 
-    def test_pass_pass_ends_game(self) -> None:
+    def test_pass_pass_enters_scoring(self) -> None:
         state = GameState.new_game()
         apply_pass(state, "black")
-        self.assertEqual(state.status, "passed")
+        self.assertEqual(state.status, "active")
         apply_pass(state, "white")
-        self.assertEqual(state.status, "game_over")
+        self.assertEqual(state.status, "scoring")
+        self.assertEqual([event.kind for event in state.move_log], ["pass", "pass"])
 
     def test_resignation_ends_game(self) -> None:
         state = GameState.new_game()
         result = apply_resign(state, "black")
-        self.assertEqual(state.status, "resigned")
+        self.assertEqual(state.status, "finished")
         self.assertEqual(result["winner"], "white")
+
+    def test_resume_preserves_pass_history_and_side_to_move(self) -> None:
+        state = GameState.new_game()
+        apply_pass(state, "black")
+        apply_pass(state, "white")
+        board_before = state.to_dict()["board"]
+        captures_before = state.capture_counts.to_dict()
+        ko_before = state.ko_point
+
+        result = apply_resume(state)
+
+        self.assertEqual(state.status, "active")
+        self.assertEqual(state.side_to_move, "black")
+        self.assertEqual(state.board, board_before)
+        self.assertEqual(state.capture_counts.to_dict(), captures_before)
+        self.assertEqual(state.ko_point, ko_before)
+        self.assertEqual([event.kind for event in state.move_log], ["pass", "pass", "resume"])
+        self.assertEqual(result["applied_event"]["reason"], "resume_play_after_scoring")
+
+    def test_finalize_marks_finished(self) -> None:
+        state = GameState.new_game()
+        apply_pass(state, "black")
+        apply_pass(state, "white")
+
+        result = apply_finalize(state)
+
+        self.assertEqual(state.status, "finished")
+        self.assertEqual(state.move_log[-1].kind, "finalize")
+        self.assertEqual(result["applied_event"]["reason"], "finalize_game_after_scoring")
 
     def test_undo_single_and_multiple(self) -> None:
         state = GameState.new_game()
@@ -215,6 +247,19 @@ class RefereeRulesTests(unittest.TestCase):
         undo(state, 2)
         self.assertEqual(state.move_number, 0)
         self.assertEqual(len(state.move_log), 0)
+
+    def test_undo_around_scoring_resume_and_finalize(self) -> None:
+        state = GameState.new_game()
+        apply_pass(state, "black")
+        apply_pass(state, "white")
+        apply_resume(state)
+        self.assertEqual(state.status, "active")
+        undo(state, 1)
+        self.assertEqual(state.status, "scoring")
+        apply_finalize(state)
+        self.assertEqual(state.status, "finished")
+        undo(state, 1)
+        self.assertEqual(state.status, "scoring")
 
     def test_chain_query(self) -> None:
         state = GameState.new_game()
@@ -326,7 +371,7 @@ class TacticalQueryTests(unittest.TestCase):
         state = GameState.new_game()
         data = simulate_sequence(state, "B:pass,W:resign")
         self.assertFalse(data["stopped_early"])
-        self.assertEqual(data["final_state"]["status"], "resigned")
+        self.assertEqual(data["final_state"]["status"], "finished")
         self.assertEqual(data["final_state"]["move_number"], 2)
 
 
@@ -346,6 +391,8 @@ class RendererTests(unittest.TestCase):
         state = GameState.new_game()
         apply_play(state, "black", "E5")
         rendered = render_text(state)
+        self.assertIn("Status:       Active", rendered)
+        self.assertIn("Last event: Black E5", rendered)
         self.assertIn("(X)", rendered)
         self.assertNotIn("+", next(line for line in rendered.splitlines() if line.startswith("  5 ")))
         self.assertIn("  5 . . . .(X). . . . 5", rendered)
@@ -375,9 +422,23 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(state.ko_point, "B1")
         apply_pass(state, "black")
         rendered = render_text(state)
+        self.assertIn("Last event: Black pass", rendered)
         board_rows = [line for line in rendered.splitlines() if line.startswith("  ") and line[2:3].isdigit()]
         self.assertEqual(sum(row.count("(X)") + row.count("(O)") for row in board_rows), 0)
         self.assertNotIn("~", rendered)
+
+    def test_render_shows_scoring_and_finished_statuses(self) -> None:
+        state = GameState.new_game()
+        apply_pass(state, "black")
+        apply_pass(state, "white")
+        rendered = render_text(state)
+        self.assertIn("Status:       Scoring", rendered)
+        self.assertIn("Last event: White pass", rendered)
+
+        apply_finalize(state)
+        finalized = render_text(state)
+        self.assertIn("Status:       Finished", finalized)
+        self.assertIn("Last event: Finalize game after scoring", finalized)
 
     def test_legacy_example_regression(self) -> None:
         move_log = extract_legacy_moves()
@@ -488,6 +549,74 @@ class CliTests(unittest.TestCase):
                     self.run_cli(tmpdir, *command)
                     self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), state_before)
                     self.assertEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), game_before)
+
+    def test_game_scoring_resume_finalize_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+
+            first_pass = json.loads(self.run_cli(tmpdir, "game", "pass", "--color", "black").stdout)
+            self.assertEqual(first_pass["result"]["status"], "active")
+
+            second_pass = json.loads(self.run_cli(tmpdir, "game", "pass", "--color", "white").stdout)
+            self.assertEqual(second_pass["result"]["status"], "scoring")
+
+            shown = json.loads(self.run_cli(tmpdir, "game", "show").stdout)
+            self.assertEqual([event["kind"] for event in shown["result"]["state"]["move_log"]], ["pass", "pass"])
+            self.assertEqual(shown["result"]["state"]["side_to_move"], "black")
+
+            blocked_play = json.loads(
+                self.run_cli(tmpdir, "game", "play", "--color", "black", "--move", "E5", check=False).stdout
+            )
+            self.assertFalse(blocked_play["ok"])
+            self.assertEqual(blocked_play["error"]["code"], "invalid_status_transition")
+
+            legal = json.loads(self.run_cli(tmpdir, "game", "legal", "--color", "black").stdout)
+            self.assertEqual(legal["result"]["status"], "scoring")
+            self.assertEqual(legal["result"]["legal_moves"], [])
+            self.assertFalse(legal["result"]["pass_legal"])
+
+            resumed = json.loads(self.run_cli(tmpdir, "game", "resume").stdout)
+            self.assertEqual(resumed["result"]["status"], "active")
+            self.assertEqual(resumed["result"]["applied_event"]["kind"], "resume")
+            self.assertEqual(resumed["result"]["applied_event"]["reason"], "resume_play_after_scoring")
+
+            played = json.loads(self.run_cli(tmpdir, "game", "play", "--color", "black", "--move", "E5").stdout)
+            self.assertTrue(played["ok"])
+            self.assertEqual(played["result"]["state"]["move_number"], 3)
+
+            self.run_cli(tmpdir, "game", "undo")
+            self.run_cli(tmpdir, "game", "pass", "--color", "black")
+            self.run_cli(tmpdir, "game", "pass", "--color", "white")
+            finalized = json.loads(self.run_cli(tmpdir, "game", "finalize").stdout)
+            self.assertEqual(finalized["result"]["status"], "finished")
+            self.assertEqual(finalized["result"]["applied_event"]["kind"], "finalize")
+
+            blocked_resume = json.loads(self.run_cli(tmpdir, "game", "resume", check=False).stdout)
+            self.assertFalse(blocked_resume["ok"])
+
+            rendered = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+            self.assertIn("Status:       Finished", rendered)
+            self.assertIn("Last event: Finalize game after scoring", rendered)
+
+    def test_session_scoring_resume_finalize_is_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "session", "create", "--name", "center-read")
+            self.run_cli(tmpdir, "session", "pass", "--name", "center-read", "--color", "black")
+            self.run_cli(tmpdir, "session", "pass", "--name", "center-read", "--color", "white")
+
+            resumed = json.loads(self.run_cli(tmpdir, "session", "resume", "--name", "center-read").stdout)
+            self.assertEqual(resumed["result"]["status"], "active")
+            self.assertEqual(resumed["result"]["applied_event"]["kind"], "resume")
+
+            self.run_cli(tmpdir, "session", "pass", "--name", "center-read", "--color", "black")
+            self.run_cli(tmpdir, "session", "pass", "--name", "center-read", "--color", "white")
+            finalized = json.loads(self.run_cli(tmpdir, "session", "finalize", "--name", "center-read").stdout)
+            self.assertEqual(finalized["result"]["status"], "finished")
+
+            canonical = json.loads(self.run_cli(tmpdir, "game", "show").stdout)
+            self.assertEqual(canonical["result"]["state"]["status"], "active")
+            self.assertEqual(canonical["result"]["state"]["move_number"], 0)
 
     def test_cli_play_updates_rendered_board(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 Color = Literal["black", "white"]
-GameStatus = Literal["active", "passed", "resigned", "game_over"]
-MoveKind = Literal["play", "pass", "resign"]
+GameStatus = Literal["active", "scoring", "finished"]
+TurnKind = Literal["play", "pass", "resign"]
+EventKind = Literal["play", "pass", "resign", "resume", "finalize"]
 Stone = Literal["empty", "black", "white"]
 Coord = str
 Point = tuple[int, int]
@@ -46,21 +47,23 @@ class CaptureCounts:
 @dataclass(slots=True)
 class MoveRecord:
     number: int
-    color: Color
-    kind: MoveKind
+    color: Color | None
+    kind: EventKind
     point: Coord | None
     captures: list[Coord] = field(default_factory=empty_coord_list)
     ko_point_after: Coord | None = None
+    reason: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MoveRecord":
         return cls(
             number=int(data["number"]),
-            color=data["color"],
+            color=data.get("color"),
             kind=data["kind"],
             point=data.get("point"),
             captures=list(data.get("captures", [])),
             ko_point_after=data.get("ko_point_after"),
+            reason=data.get("reason"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,12 +73,14 @@ class MoveRecord:
 @dataclass(slots=True)
 class LastMove:
     color: Color
-    kind: MoveKind
+    kind: TurnKind
     point: Coord | None
 
     @classmethod
     def from_record(cls, record: MoveRecord) -> "LastMove":
-        return cls(color=record.color, kind=record.kind, point=record.point)
+        if record.color is None or record.kind not in {"play", "pass", "resign"}:
+            raise ValueError("LastMove can only be created from turn events")
+        return cls(color=record.color, kind=cast(TurnKind, record.kind), point=record.point)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LastMove":
@@ -87,6 +92,7 @@ class LastMove:
 
 @dataclass(slots=True)
 class HistoryEntry:
+    event_number: int
     move_number: int
     position_hash: str
     board: list[list[Stone]]
@@ -100,6 +106,7 @@ class HistoryEntry:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "HistoryEntry":
         return cls(
+            event_number=int(data.get("event_number", len(data.get("move_log", [])))),
             move_number=int(data["move_number"]),
             position_hash=data["position_hash"],
             board=[[cell for cell in row] for row in data["board"]],
@@ -113,6 +120,7 @@ class HistoryEntry:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "event_number": self.event_number,
             "move_number": self.move_number,
             "position_hash": self.position_hash,
             "board": self.board,
@@ -132,6 +140,7 @@ class GameState:
     komi: float
     handicap: int
     status: GameStatus
+    event_number: int
     move_number: int
     side_to_move: Color
     ko_point: Coord | None
@@ -149,6 +158,7 @@ class GameState:
             komi=KOMI,
             handicap=HANDICAP,
             status="active",
+            event_number=0,
             move_number=0,
             side_to_move="black",
             ko_point=None,
@@ -166,7 +176,8 @@ class GameState:
             board_size=int(data["board_size"]),
             komi=float(data["komi"]),
             handicap=int(data["handicap"]),
-            status=data["status"],
+            status=cls.normalize_status(data["status"], data.get("move_log", [])),
+            event_number=int(data.get("event_number", len(data.get("move_log", [])))),
             move_number=int(data["move_number"]),
             side_to_move=data["side_to_move"],
             ko_point=data.get("ko_point"),
@@ -184,6 +195,7 @@ class GameState:
             "komi": self.komi,
             "handicap": self.handicap,
             "status": self.status,
+            "event_number": self.event_number,
             "move_number": self.move_number,
             "side_to_move": self.side_to_move,
             "ko_point": self.ko_point,
@@ -193,6 +205,22 @@ class GameState:
             "move_log": [move.to_dict() for move in self.move_log],
             "history": [entry.to_dict() for entry in self.history],
         }
+
+    @staticmethod
+    def normalize_status(raw_status: str, move_log: list[dict[str, Any]]) -> GameStatus:
+        if raw_status == "active":
+            return "active"
+        if raw_status == "passed":
+            return "active"
+        if raw_status == "game_over":
+            if len(move_log) >= 2 and move_log[-1].get("kind") == "pass" and move_log[-2].get("kind") == "pass":
+                return "scoring"
+            return "finished"
+        if raw_status == "resigned":
+            return "finished"
+        if raw_status in {"scoring", "finished"}:
+            return cast(GameStatus, raw_status)
+        return "active"
 
 
 @dataclass(slots=True)

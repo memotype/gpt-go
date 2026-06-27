@@ -25,6 +25,25 @@ def format_last_move(state: GameState) -> str | None:
     return f"{format_player(state.last_move.color)} resign"
 
 
+def format_status(status: str) -> str:
+    return {"active": "Active", "scoring": "Scoring", "finished": "Finished"}[status]
+
+
+def format_last_event(state: GameState) -> str | None:
+    if not state.move_log:
+        return None
+    event = state.move_log[-1]
+    if event.kind == "play":
+        return f"{format_player(event.color or 'black')} {event.point}"
+    if event.kind == "pass":
+        return f"{format_player(event.color or 'black')} pass"
+    if event.kind == "resign":
+        return f"{format_player(event.color or 'black')} resign"
+    if event.kind == "resume":
+        return "Resume play after scoring"
+    return "Finalize game after scoring"
+
+
 def display_symbol(state: GameState, x: int, y: int) -> str:
     coord = format_coord((x, y))
     stone = state.board[y][x]
@@ -67,7 +86,12 @@ def render_row(state: GameState, row_number: int) -> str:
 def render_move_log(state: GameState) -> list[str]:
     lines = ["MOVE LOG", "========", ""]
     for move in state.move_log:
-        suffix = move.point if move.kind == "play" else move.kind
+        if move.kind == "play":
+            suffix = move.point
+        elif move.kind in {"pass", "resign"}:
+            suffix = f"{format_player(move.color or 'black')} {move.kind}"
+        else:
+            suffix = move.reason or move.kind
         lines.append(f"{move.number}. {suffix}")
     if state.move_number == 0:
         lines.append("1.")
@@ -76,10 +100,13 @@ def render_move_log(state: GameState) -> list[str]:
 
 def render_text(state: GameState) -> str:
     last_move = format_last_move(state)
+    last_event = format_last_event(state)
     lines = [
         f"Board Size:   {state.board_size}",
         f"Handicap      {state.handicap}",
         f"Komi:         {state.komi}",
+        f"Status:       {format_status(state.status)}",
+        f"Event Number: {state.event_number}",
         f"Move Number:  {state.move_number}",
         f"To Move:      {format_player(state.side_to_move)}",
         f"Ko:           {format_ko(state.ko_point)}",
@@ -92,6 +119,8 @@ def render_text(state: GameState) -> str:
     if last_move is not None:
         header = f"{header}        Last move: {last_move}"
     lines.append(header)
+    if last_event is not None:
+        lines.append(f"                       Last event: {last_event}")
     for row_number in range(BOARD_SIZE, 0, -1):
         lines.append(render_row(state, row_number))
     lines.append("    A B C D E F G H J")

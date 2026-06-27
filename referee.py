@@ -15,12 +15,15 @@ from models import (
     ChainInfo,
     Color,
     Coord,
+    EventKind,
     GameState,
+    GameStatus,
     HistoryEntry,
     LastMove,
     MoveRecord,
     Point,
     Stone,
+    TurnKind,
 )
 
 
@@ -46,7 +49,7 @@ class PlayResult:
     state: dict[str, Any]
 
 
-SequenceActionKind = Literal["play", "pass", "resign"]
+SequenceActionKind = TurnKind
 
 
 @dataclass(slots=True)
@@ -223,6 +226,7 @@ def position_hash(state: GameState) -> str:
 
 def snapshot_state(state: GameState) -> HistoryEntry:
     return HistoryEntry(
+        event_number=state.event_number,
         move_number=state.move_number,
         position_hash=position_hash(state),
         board=board_copy(state.board),
@@ -245,6 +249,7 @@ def restore_snapshot(entry: HistoryEntry, history: list[HistoryEntry]) -> GameSt
         komi=6.5,
         handicap=0,
         status=entry.status,
+        event_number=entry.event_number,
         move_number=entry.move_number,
         side_to_move=entry.side_to_move,
         ko_point=entry.ko_point,
@@ -265,12 +270,62 @@ def state_summary(state: GameState) -> dict[str, Any]:
         "komi": state.komi,
         "handicap": state.handicap,
         "status": state.status,
+        "event_number": state.event_number,
         "move_number": state.move_number,
         "side_to_move": state.side_to_move,
         "ko_point": state.ko_point,
         "capture_counts": state.capture_counts.to_dict(),
         "last_move": state.last_move.to_dict() if state.last_move else None,
     }
+
+
+def event_requires_turn(kind: EventKind) -> bool:
+    return kind in {"play", "pass", "resign"}
+
+
+def last_event(state: GameState) -> MoveRecord | None:
+    if not state.move_log:
+        return None
+    return state.move_log[-1]
+
+
+def set_status(state: GameState, status: GameStatus) -> None:
+    state.status = status
+
+
+def ensure_status(state: GameState, allowed: set[GameStatus], command: str) -> None:
+    if state.status not in allowed:
+        raise RefereeError(
+            "invalid_status_transition",
+            f"Command '{command}' is not allowed while status is {state.status}",
+            {"status": state.status, "command": command},
+        )
+
+
+def append_event(
+    state: GameState,
+    *,
+    kind: EventKind,
+    color: Color | None,
+    point: Coord | None,
+    captures: list[Coord] | None = None,
+    ko_point_after: Coord | None = None,
+    reason: str | None = None,
+) -> MoveRecord:
+    state.event_number += 1
+    if event_requires_turn(kind):
+        state.move_number += 1
+    record = MoveRecord(
+        number=state.event_number,
+        color=color,
+        kind=kind,
+        point=point,
+        captures=captures or [],
+        ko_point_after=ko_point_after,
+        reason=reason,
+    )
+    state.move_log.append(record)
+    return record
 
 
 def load_state(path: Path) -> GameState:
@@ -303,8 +358,11 @@ def validate_state(state: GameState) -> dict[str, bool]:
         raise RefereeError("board_contents", "Board contains invalid stone values")
     checks["board_shape"] = True
     checks["board_contents"] = True
-    if state.move_number != len(state.move_log):
-        raise RefereeError("move_log", "Move number does not match move log length")
+    if state.event_number != len(state.move_log):
+        raise RefereeError("move_log", "Event number does not match move log length")
+    turn_events = sum(1 for item in state.move_log if event_requires_turn(item.kind))
+    if state.move_number != turn_events:
+        raise RefereeError("move_log", "Move number does not match turn-event count")
     checks["move_log"] = True
     if state.move_number == 0:
         if state.last_move is not None:
@@ -312,7 +370,10 @@ def validate_state(state: GameState) -> dict[str, bool]:
     else:
         if state.last_move is None:
             raise RefereeError("last_move", "Last move is missing")
-        last_record = state.move_log[-1]
+        turn_log = [item for item in state.move_log if event_requires_turn(item.kind)]
+        if not turn_log:
+            raise RefereeError("last_move", "Last move is missing")
+        last_record = turn_log[-1]
         if (
             state.last_move.color != last_record.color
             or state.last_move.kind != last_record.kind
@@ -328,15 +389,16 @@ def validate_state(state: GameState) -> dict[str, bool]:
         if get_stone(state.board, point) != "empty":
             raise RefereeError("ko_point", "Ko point must be empty", {"ko_point": state.ko_point})
     checks["ko_point"] = True
-    valid_status = {"active", "passed", "resigned", "game_over"}
+    valid_status = {"active", "scoring", "finished"}
     if state.status not in valid_status:
         raise RefereeError("status", "Invalid game status", {"status": state.status})
-    if state.status == "game_over":
+    latest = last_event(state)
+    if state.status == "scoring":
         if len(state.move_log) < 2 or state.move_log[-1].kind != "pass" or state.move_log[-2].kind != "pass":
-            raise RefereeError("status", "Game over requires consecutive passes")
-    if state.status == "resigned":
-        if not state.move_log or state.move_log[-1].kind != "resign":
-            raise RefereeError("status", "Resigned game must end with resignation")
+            raise RefereeError("status", "Scoring requires consecutive passes")
+    if state.status == "finished":
+        if latest is None or latest.kind not in {"resign", "finalize"}:
+            raise RefereeError("status", "Finished game must end with resignation or finalization")
     checks["status"] = True
     replayed = replay_move_log(state.move_log, state.komi, state.handicap)
     compare_replayed_state(state, replayed)
@@ -351,6 +413,7 @@ def compare_replayed_state(expected: GameState, replayed: GameState) -> None:
         or expected.ko_point != replayed.ko_point
         or expected.side_to_move != replayed.side_to_move
         or expected.status != replayed.status
+        or expected.event_number != replayed.event_number
         or expected.move_number != replayed.move_number
         or expected.capture_counts.to_dict() != replayed.capture_counts.to_dict()
         or (expected.last_move.to_dict() if expected.last_move else None)
@@ -361,8 +424,12 @@ def compare_replayed_state(expected: GameState, replayed: GameState) -> None:
 
 
 def ensure_active_turn(state: GameState, color: Color) -> None:
-    if state.status in {"resigned", "game_over"}:
-        raise RefereeError("game_over", "Game is already over", {"status": state.status})
+    if state.status != "active":
+        raise RefereeError(
+            "invalid_status_transition",
+            f"Command 'play' is not allowed while status is {state.status}",
+            {"status": state.status, "command": "play"},
+        )
     if color != state.side_to_move:
         raise RefereeError(
             "wrong_side",
@@ -432,8 +499,7 @@ def explain_move_legality(state: GameState, color: Color, move: Coord, *, ignore
     analysis_state = clone_state(state)
     if ignore_turn:
         analysis_state.side_to_move = color
-        if analysis_state.status in {"resigned", "game_over"}:
-            analysis_state.status = "active"
+        analysis_state.status = "active"
     occupied = get_stone(analysis_state.board, point) != "empty"
     legal, reason = is_move_legal(analysis_state, color, text)
     result: dict[str, Any] = {
@@ -633,20 +699,18 @@ def apply_play(state: GameState, color: Color, move: Coord) -> PlayResult:
     else:
         state.capture_counts.white += delta
     state.ko_point = ko_point_for_position(board, point, captured_points)
-    state.move_number += 1
     captures = sorted(format_coord(item) for item in captured_points)
-    record = MoveRecord(
-        number=state.move_number,
-        color=color,
+    record = append_event(
+        state,
         kind="play",
+        color=color,
         point=move.upper(),
         captures=captures,
         ko_point_after=state.ko_point,
     )
-    state.move_log.append(record)
     state.last_move = LastMove.from_record(record)
     state.side_to_move = other_color(color)
-    state.status = "active"
+    set_status(state, "active")
     return PlayResult(
         applied_move=record,
         captures=captures,
@@ -658,44 +722,52 @@ def apply_play(state: GameState, color: Color, move: Coord) -> PlayResult:
 
 
 def apply_pass(state: GameState, color: Color) -> dict[str, Any]:
-    ensure_active_turn(state, color)
+    ensure_status(state, {"active"}, "pass")
+    if color != state.side_to_move:
+        raise RefereeError(
+            "wrong_side",
+            f"It is {state.side_to_move}'s turn",
+            {"expected": state.side_to_move, "actual": color},
+        )
     previous = snapshot_state(state)
     prior_was_pass = bool(state.move_log) and state.move_log[-1].kind == "pass"
     state.history.append(previous)
-    state.move_number += 1
     state.ko_point = None
-    record = MoveRecord(
-        number=state.move_number,
-        color=color,
+    record = append_event(
+        state,
         kind="pass",
+        color=color,
         point=None,
         captures=[],
         ko_point_after=None,
     )
-    state.move_log.append(record)
     state.last_move = LastMove.from_record(record)
     state.side_to_move = other_color(color)
-    state.status = "game_over" if prior_was_pass else "passed"
+    set_status(state, "scoring" if prior_was_pass else "active")
     return {"applied_move": record.to_dict(), "status": state.status, "state": state_summary(state)}
 
 
 def apply_resign(state: GameState, color: Color) -> dict[str, Any]:
-    ensure_active_turn(state, color)
+    ensure_status(state, {"active"}, "resign")
+    if color != state.side_to_move:
+        raise RefereeError(
+            "wrong_side",
+            f"It is {state.side_to_move}'s turn",
+            {"expected": state.side_to_move, "actual": color},
+        )
     previous = snapshot_state(state)
     state.history.append(previous)
-    state.move_number += 1
     state.ko_point = None
-    record = MoveRecord(
-        number=state.move_number,
-        color=color,
+    record = append_event(
+        state,
         kind="resign",
+        color=color,
         point=None,
         captures=[],
         ko_point_after=None,
     )
-    state.move_log.append(record)
     state.last_move = LastMove.from_record(record)
-    state.status = "resigned"
+    set_status(state, "finished")
     winner = other_color(color)
     return {
         "applied_move": record.to_dict(),
@@ -703,6 +775,40 @@ def apply_resign(state: GameState, color: Color) -> dict[str, Any]:
         "winner": winner,
         "state": state_summary(state),
     }
+
+
+def apply_resume(state: GameState) -> dict[str, Any]:
+    ensure_status(state, {"scoring"}, "resume")
+    previous = snapshot_state(state)
+    state.history.append(previous)
+    set_status(state, "active")
+    record = append_event(
+        state,
+        kind="resume",
+        color=None,
+        point=None,
+        captures=[],
+        ko_point_after=state.ko_point,
+        reason="resume_play_after_scoring",
+    )
+    return {"applied_event": record.to_dict(), "status": state.status, "state": state_summary(state)}
+
+
+def apply_finalize(state: GameState) -> dict[str, Any]:
+    ensure_status(state, {"scoring"}, "finalize")
+    previous = snapshot_state(state)
+    state.history.append(previous)
+    set_status(state, "finished")
+    record = append_event(
+        state,
+        kind="finalize",
+        color=None,
+        point=None,
+        captures=[],
+        ko_point_after=state.ko_point,
+        reason="finalize_game_after_scoring",
+    )
+    return {"applied_event": record.to_dict(), "status": state.status, "state": state_summary(state)}
 
 
 def chain_at(state: GameState, coord: Coord) -> dict[str, Any]:
@@ -771,8 +877,7 @@ def query_point(state: GameState, coord: Coord) -> dict[str, Any]:
         if move_analysis["legal"]:
             simulated = clone_state(state)
             simulated.side_to_move = color
-            if simulated.status in {"resigned", "game_over"}:
-                simulated.status = "active"
+            simulated.status = "active"
             apply_result = apply_play(simulated, color, coord.upper())
             move_effects[color]["ko_point_after"] = apply_result.ko_point
     payload: dict[str, Any] = {
@@ -898,6 +1003,7 @@ def undo(state: GameState, count: int) -> dict[str, Any]:
     state.komi = restored.komi
     state.handicap = restored.handicap
     state.status = restored.status
+    state.event_number = restored.event_number
     state.move_number = restored.move_number
     state.side_to_move = restored.side_to_move
     state.ko_point = restored.ko_point
@@ -914,14 +1020,31 @@ def replay_move_log(move_log: list[MoveRecord], komi: float, handicap: int) -> G
     state.komi = komi
     state.handicap = handicap
     for record in move_log:
-        if record.number != state.move_number + 1:
-            raise RefereeError("move_log", "Move numbers must be sequential")
+        if record.number != state.event_number + 1:
+            raise RefereeError("move_log", "Event numbers must be sequential")
         if record.kind == "play":
+            if record.color is None:
+                raise RefereeError("move_log", "Play events require a color")
             apply_play(state, record.color, record.point or "")
         elif record.kind == "pass":
+            if record.color is None:
+                raise RefereeError("move_log", "Pass events require a color")
             apply_pass(state, record.color)
         elif record.kind == "resign":
+            if record.color is None:
+                raise RefereeError("move_log", "Resign events require a color")
             apply_resign(state, record.color)
+        elif record.kind == "resume":
+            apply_resume(state)
+        elif record.kind == "finalize":
+            apply_finalize(state)
         else:
             raise RefereeError("move_log", "Unknown move kind", {"kind": record.kind})
+        replayed_record = state.move_log[-1]
+        if replayed_record.kind != record.kind or replayed_record.number != record.number:
+            raise RefereeError("move_log", "Stored event does not match replayed event", {"number": record.number})
+        if replayed_record.color != record.color or replayed_record.point != record.point:
+            raise RefereeError("move_log", "Stored event payload does not match replayed event", {"number": record.number})
+        if replayed_record.reason != record.reason:
+            raise RefereeError("move_log", "Stored event reason does not match replayed event", {"number": record.number})
     return state

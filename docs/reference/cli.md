@@ -12,6 +12,7 @@ The referee is responsible for deterministic mechanics and state management:
 - connected chains and liberties
 - simple ko
 - pass and resignation
+- scoring-phase resume and finalize
 - undo
 - tactical queries
 - generated board rendering
@@ -80,12 +81,16 @@ board:
 - `game play`
 - `game pass`
 - `game resign`
+- `game resume`
+- `game finalize`
 - `game undo`
 - `session create`
 - `session temp`
 - `session play`
 - `session pass`
 - `session resign`
+- `session resume`
+- `session finalize`
 - `session undo`
 - `session reset`
 - `session persist`
@@ -138,6 +143,8 @@ Mutate canonical state:
 python3 go_ref.py game play --color black --move E5
 python3 go_ref.py game pass --color white
 python3 go_ref.py game resign --color black
+python3 go_ref.py game resume
+python3 go_ref.py game finalize
 python3 go_ref.py game undo --count 1
 ```
 
@@ -197,9 +204,43 @@ Reset, persist, or delete:
 
 ```bash
 python3 go_ref.py session reset --name center-read --from game
+python3 go_ref.py session resume --name center-read
+python3 go_ref.py session finalize --name center-read
 python3 go_ref.py session persist --name _tmp_ab12cd34 --as saved-read
 python3 go_ref.py session delete --name center-read
 ```
+
+## Lifecycle Status
+
+- `active`
+  - normal play; `play`, `pass`, `resign`, and `undo` are allowed
+- `scoring`
+  - entered automatically after two consecutive passes
+  - normal play is paused; inspection commands still work
+  - `play`, `pass`, and `resign` are rejected
+  - use `resume` to continue play without deleting the pass history
+  - use `finalize` to mark the game finished without changing the board
+- `finished`
+  - terminal after resignation or explicit finalization
+  - inspection commands still work
+  - `play`, `pass`, `resign`, `resume`, and `finalize` are rejected
+  - `undo` remains available as a correction tool
+
+Turn order remains consistent through scoring. After `Black pass` then `White
+pass`, Black is next if play later resumes.
+
+## Status-Sensitive Command Rules
+
+- `show`, `query`, and `chain` stay non-mutating and remain available in all
+  lifecycle states.
+- `legal` stays non-mutating in all lifecycle states.
+  - in `active`, it reports legal play normally
+  - in `scoring` and `finished`, point checks return `legal: false` with a
+    status-based reason, and list mode returns no legal moves with
+    `pass_legal: false`
+- `undo` remains available in `active`, `scoring`, and `finished`.
+- `resume` is valid only in `scoring`.
+- `finalize` is valid only in `scoring`.
 
 ## Query Subcommands
 
@@ -232,7 +273,8 @@ The tool rejects:
 - suicide, unless the move captures
 - immediate recapture on the current ko point
 - moves played out of turn
-- moves after the game is over
+- moves when lifecycle status forbids ordinary play, such as `scoring` or
+  `finished`
 
 ## JSON Output
 

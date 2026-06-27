@@ -36,6 +36,9 @@ Play on the canonical game:
 ```bash
 python3 go_ref.py game play --color black --move E5
 python3 go_ref.py game play --color white --move C3
+python3 go_ref.py game pass --color black
+python3 go_ref.py game pass --color white
+python3 go_ref.py game resume
 ```
 
 Inspect the canonical game:
@@ -80,6 +83,8 @@ python3 go_ref.py session temp --from game
 - Mutating `game` and `session` commands update stored state and refresh the
   matching rendered board.
 - Query-style commands stay non-mutating.
+- Two consecutive passes enter `scoring`; use `resume` to reopen play and
+  `finalize` to mark the game finished without rewriting pass history.
 - Same-target CLI commands remain serialized so concurrent processes do not
   race state and rendered output, and single-target commands run in arrival
   order.

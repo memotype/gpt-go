@@ -34,6 +34,10 @@ Use this command model:
 
 Record real moves only on `game`.
 Use `session` for tactical reading.
+Two consecutive passes enter scoring, not irreversible termination.
+If play should continue after a scoring dispute, use `resume` rather than
+undoing the passes.
+If no more play should occur after scoring, use `finalize`.
 
 When beginning a new game:
 
@@ -56,6 +60,10 @@ On each White move:
    - `python3 go_ref.py session temp --from game`
 4. Read candidate lines inside that session with `session play` and
    `session query`.
+   - If two consecutive passes occur during real play or in a session, treat
+     that state as scoring; use `game resume` or `session resume` if play must
+     continue, or `game finalize` / `session finalize` if the line is truly
+     complete.
    - If a candidate move or reply starts a forcing sequence, continue reading
      in `session` until the forcing sequence ends, repeats, becomes a ko or
      branch problem, or reaches the configured depth limit.

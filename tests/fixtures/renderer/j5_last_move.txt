@@ -1,6 +1,8 @@
 Board Size:   9
 Handicap      0
 Komi:         6.5
+Status:       Active
+Event Number: 1
 Move Number:  1
 To Move:      White
 Ko:           none
@@ -9,6 +11,7 @@ Ko:           none
     Black (X) has captured 0 pieces
 
     A B C D E F G H J        Last move: Black J5
+                       Last event: Black J5
   9 . . . . . . . . . 9
   8 . . . . . . . . . 8
   7 . . + . . . + . . 7

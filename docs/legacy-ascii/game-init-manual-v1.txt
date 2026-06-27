@@ -1,6 +1,8 @@
 Board Size:   9
 Handicap      0
 Komi:         6.5
+Status:       Active
+Event Number: 0
 Move Number:  0
 To Move:      Black
 Ko:           none

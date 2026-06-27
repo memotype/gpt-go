@@ -31,6 +31,10 @@ Canonical play lives under `game`:
 
 - record real moves with `game play`, `game pass`, or `game resign`
 - inspect the live position with `game show` or `game query`
+- after two consecutive passes, treat the game as in scoring rather than
+  irreversibly over
+- if play must continue after a pass dispute, use `game resume` instead of
+  undoing the passes
 
 Hypothetical reading lives under `session`:
 
@@ -148,6 +152,10 @@ Delete sessions when they are no longer useful:
 ```bash
 python3 go_ref.py session delete --name _tmp_ab12cd34
 ```
+
+If a session reaches scoring after two passes, use `session resume` to keep
+reading or `session finalize` to close that hypothetical line without erasing
+the passes.
 
 ## Recommended Analysis Pattern
 

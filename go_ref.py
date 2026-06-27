@@ -17,8 +17,10 @@ from typing import TextIO, TypedDict, cast
 from models import Color, GameState
 from referee import (
     RefereeError,
+    apply_finalize,
     apply_pass,
     apply_play,
+    apply_resume,
     apply_resign,
     chain_at,
     load_state,
@@ -363,6 +365,8 @@ def parser() -> argparse.ArgumentParser:
 
     _ = game_subparsers.add_parser("validate")
     _ = game_subparsers.add_parser("render")
+    _ = game_subparsers.add_parser("resume")
+    _ = game_subparsers.add_parser("finalize")
     undo_parser = game_subparsers.add_parser("undo")
     _ = undo_parser.add_argument("--count", type=int, default=1)
 
@@ -390,7 +394,7 @@ def parser() -> argparse.ArgumentParser:
     _ = reset_parser.add_argument("--name", required=True)
     _ = reset_parser.add_argument("--from", dest="source", required=True)
 
-    for name in ("play", "pass", "resign", "legal", "chain", "undo"):
+    for name in ("play", "pass", "resign", "legal", "chain", "undo", "resume", "finalize"):
         parser_obj = session_subparsers.add_parser(name)
         _ = parser_obj.add_argument("--name", required=True)
         if name in {"play", "pass", "resign", "legal"}:
@@ -502,6 +506,27 @@ def resign_command(target: Target, color: Color) -> dict[str, object]:
 
 def legal_command(target: Target, color: Color, move: str | None) -> dict[str, object]:
     state = load_target_state(target)
+    if state.status != "active":
+        if move is not None:
+            return {
+                "target": target_payload(target),
+                "mutated": False,
+                "color": color,
+                "move": move.upper(),
+                "legal": False,
+                "reason": f"status_{state.status}",
+                "status": state.status,
+            }
+        return {
+            "target": target_payload(target),
+            "mutated": False,
+            "color": color,
+            "legal_moves": [],
+            "pass_legal": False,
+            "count": 0,
+            "ko_point": state.ko_point,
+            "status": state.status,
+        }
     if move is not None:
         legal, reason = is_move_legal(state, color, move.upper())
         return {
@@ -511,6 +536,7 @@ def legal_command(target: Target, color: Color, move: str | None) -> dict[str, o
             "move": move.upper(),
             "legal": legal,
             "reason": reason,
+            "status": state.status,
         }
     legal_moves = list_legal_moves(state, color)
     return {
@@ -518,9 +544,10 @@ def legal_command(target: Target, color: Color, move: str | None) -> dict[str, o
         "mutated": False,
         "color": color,
         "legal_moves": legal_moves,
-        "pass_legal": state.status not in {"resigned", "game_over"} and state.side_to_move == color,
+        "pass_legal": state.side_to_move == color,
         "count": len(legal_moves),
         "ko_point": state.ko_point,
+        "status": state.status,
     }
 
 
@@ -549,6 +576,26 @@ def render_command(target: Target) -> dict[str, object]:
 def undo_command(target: Target, count: int) -> dict[str, object]:
     state = load_target_state(target)
     result = undo(state, count)
+    save_target_state(target, state)
+    render_target(target, state)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": True, **result}
+
+
+def resume_command(target: Target) -> dict[str, object]:
+    state = load_target_state(target)
+    result = apply_resume(state)
+    save_target_state(target, state)
+    render_target(target, state)
+    if target.kind == "session":
+        touch_session_meta(target)
+    return {"target": target_payload(target), "mutated": True, **result}
+
+
+def finalize_command(target: Target) -> dict[str, object]:
+    state = load_target_state(target)
+    result = apply_finalize(state)
     save_target_state(target, state)
     render_target(target, state)
     if target.kind == "session":
@@ -688,6 +735,10 @@ def main(argv: list[str] | None = None) -> int:
                     result = validate_command(target)
                 elif game_command == "render":
                     result = render_command(target)
+                elif game_command == "resume":
+                    result = resume_command(target)
+                elif game_command == "finalize":
+                    result = finalize_command(target)
                 elif game_command == "undo":
                     result = undo_command(target, cast(int, args.count))
                 else:
@@ -756,6 +807,10 @@ def main(argv: list[str] | None = None) -> int:
                         result = validate_command(target)
                     elif session_command == "render":
                         result = render_command(target)
+                    elif session_command == "resume":
+                        result = resume_command(target)
+                    elif session_command == "finalize":
+                        result = finalize_command(target)
                     elif session_command == "undo":
                         result = undo_command(target, cast(int, args.count))
                     else:

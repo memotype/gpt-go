@@ -2,6 +2,13 @@
 
 Use this as the thin session-start prompt for Codex when starting a new game:
 
+This prompt is intentionally thin. The detailed operating rules live in:
+
+- `docs/reference/cli.md`
+- `docs/agents/player/gameplay-governance.md`
+
+## PROMPT
+
 ```md
 Let's play a 9x9 game of Go. I play White and you play Black.
 
@@ -52,16 +59,21 @@ On each White move:
    - If a candidate move or reply starts a forcing sequence, continue reading
      in `session` until the forcing sequence ends, repeats, becomes a ko or
      branch problem, or reaches the configured depth limit.
+   - If a move is meant to defend a weak Black chain, query the resulting
+     chain after the move instead of assuming that connection created safety.
    - Do not stop after one legal-looking reply while the opponent still has an
      obvious forcing atari, capture, ko recapture, or immediate threat
      involving the same chain.
    - Do not trust one-ply severity by itself. Read White's strongest obvious
      local reply first, and prefer the move that leaves Black with the better
      shape or cleaner result after that reply.
+   - Do not treat a move as a successful defense if it only connects an
+     endangered Black chain into a larger chain that still has 1 liberty, or
+     still faces the same forcing attack after White's strongest local reply.
+   - Do not justify a move as safe, thick, or calm unless you can name the
+     concrete board change it creates.
+   - After captures, major connections, or failed local plans, briefly reset
+     and reassess the whole board before continuing the previous idea by
+     inertia.
 5. Record Black's final move only on `game`.
 ```
-
-This prompt is intentionally thin. The detailed operating rules live in:
-
-- [../../reference/cli.md](../../reference/cli.md)
-- [./gameplay-governance.md](./gameplay-governance.md)

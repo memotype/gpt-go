@@ -168,6 +168,28 @@ This is not a move-selection algorithm. The point is to keep real play and
 hypothetical reading separate while giving Codex room to judge shape, life,
 efficiency, and whole-board tradeoffs.
 
+## Post-Move Factual Audit
+
+When a candidate touches, extends, connects to, or claims to defend a weak
+Black chain, verify the resulting facts in `session` before trusting the move.
+
+Name the exact threat the move is supposed to answer. Then inspect the
+resulting chain after the move rather than assuming that adding a stone or
+making a connection created safety.
+
+If the candidate merges chains, inspect the merged chain itself. Do not assume
+that connection equals safety just because the stones are now linked.
+
+Reject the move as a successful defense if the post-move chain:
+
+- is still in atari
+- still faces the same forcing liberty shortage
+- still fails to answer the named threat after White's strongest obvious reply
+
+This audit is not a universal liberty-threshold rule. The point is to check
+whether the move actually changed the tactical problem rather than just moving
+it around.
+
 ## Forced-Line Reading
 
 Forced-line reading is required when the position is tactically hot, especially
@@ -182,6 +204,14 @@ if a candidate move or White's obvious reply:
 
 During forced-line reading, keep following the branch while either side still
 has an obvious forcing move involving the same local chain or capture race.
+
+A move is not validated by finding one friendly continuation. First compare it
+against White's most obvious forcing exploitation of the candidate.
+
+Do not count a move as a successful answer to atari or severe liberty pressure
+merely because it connects to more stones. If the endangered Black chain, or
+the larger chain it joins, still has only 1 liberty after the move, treat the
+position as still forcing and keep reading.
 
 For this protocol, a forcing move means a move that:
 
@@ -207,6 +237,23 @@ For this rule, "concrete gain" is Codex's tactical judgment about the branch
 result. It is not referee output and must not be inferred from the CLI as a
 move recommendation or life-and-death judgment.
 
+## Role-Based Candidate Discipline
+
+When the move is nontrivial, do not jump directly from "that move is bad" to
+"therefore I should add another stone nearby."
+
+Instead, consider candidates from distinct roles such as:
+
+- urgent defense or capture
+- forcing attack
+- connection or escape
+- move elsewhere that takes profit or initiative from the opponent's local commitment
+- quiet move that secures a concrete result
+
+This does not require a fixed number of candidates every turn. Use it when
+Black is in danger of drifting into one-track local play without comparing a
+different kind of idea.
+
 ## Candidate Discipline
 
 Do not treat a move as good merely because it:
@@ -231,8 +278,17 @@ Be suspicious of the candidate if White's best reply:
 - leaves Black less settled than a calmer alternative after the forcing
   sequence ends
 
-When a sharp candidate fizzles, prefer the calmer move that leaves Black with
-better shape or a cleaner position.
+If Black's move only relocates liberties, creates a larger but still pressured
+chain, or preserves the same race without a concrete gain, keep reading or
+reject it.
+
+Reject the candidate outright if its main idea is to save a chain in atari but
+the move only produces a larger Black chain that is still in atari, or still
+under the same forcing liberty shortage, after White's strongest obvious
+reply.
+
+When a sharp candidate fizzles, prefer the calmer move only if it leaves a
+cleaner factual result after White's best reply.
 
 Do not confuse short-term severity with profit. A move that looks active for
 one ply may still be poor if White's natural answer leaves Black heavy, thin,
@@ -241,6 +297,90 @@ or forced low.
 Likewise, do not stop reading just because Black found a legal move that saves
 one stone or answers one atari. Continue until the local fight is actually
 stable, or until the candidate is clearly worse than a quieter alternative.
+
+## Pre-Commit Critique
+
+Before recording Black's final move on `game`, switch briefly from player mode
+to critic mode.
+
+Assume the preferred move is bad and give the strongest concrete critique of
+it:
+
+- what threat it fails to answer
+- what gain it fails to create
+- what useful point it needlessly fills
+- what stronger opponent reply makes the move look hollow
+
+This critique should sound like post-game review, not advocacy. Analyze the
+candidate as if it were the move that lost the game.
+
+Do not justify a move with words like:
+
+- solid
+- thick
+- safe
+- calm
+- efficient
+
+unless you can name the exact tactical or positional change the move creates.
+
+If the critique shows the move only looks legal, connected, thick, or safe
+without producing a concrete gain after White's best reply, reject it and keep
+reading or choose another candidate.
+
+Apply the same rejection if the move "saves" stones by connecting them into a
+larger group that still has just 1 liberty or is still under the same forcing
+attack. That is not a resolved defense; it is just a bigger target.
+
+## Global Reset After Material Change
+
+After a material change, pause briefly and reset the whole-board picture before
+continuing the previous plan by inertia.
+
+Use this reset after events such as:
+
+- a capture
+- a major connection
+- a failed tactical line
+- ko
+- a pass dispute or resumption
+- a group becoming clearly dead or clearly alive
+
+Keep the reset brief. Ask:
+
+- what changed on the full board
+- which chains are now weak
+- which previous goals no longer matter
+- whether a more urgent area now exists
+
+This is not a requirement to rescan the whole board after every move. It is a
+guardrail against stale plans surviving after the position changed materially.
+
+## Concrete Language Discipline
+
+Positional judgment is allowed, but vague praise is not enough on its own.
+
+Do not justify a move as:
+
+- safe
+- thick
+- settled
+- calm
+- solid
+- efficient
+
+unless you can translate the claim into a concrete board consequence such as:
+
+- a chain gains liberties
+- a chain connects to an independently live group
+- a forcing move is removed
+- a territory boundary becomes secure
+- an opponent loses an escape route
+- Black gains initiative elsewhere
+- a capture threat becomes real
+
+The purpose is not to ban positional language. The purpose is to make the
+reasoning falsifiable against the board.
 
 ## Recording Black's Final Move
 
@@ -273,3 +413,31 @@ Use this rhythm unless the move is trivially forced, a pass, or a resignation.
 - Ask for White's move in coordinate form such as `C3`.
 - Do not dump large JSON outputs to the user unless specifically needed.
 - If a White move is illegal, explain briefly and ask for another move.
+
+## Tooling Appendix
+
+This appendix does not add new CLI commands. It records neutral tool ideas
+that may improve Codex's external working memory without turning the referee
+into a strategist.
+
+### Essential Bookkeeping
+
+- summary of chains changed by the last move
+- compact weak-chain summary with stones and liberties only, without ranking
+- local board crop around a point
+- easier inspection of the resulting chain after a hypothetical move in `session`
+
+### Useful But Optional
+
+- compact diff between pre-move and post-move chain or liberty state in a session
+- helper query for chains touching a point or changed in a line
+- easier display of adjacent chains and shared liberties
+
+### Too Opinionated
+
+- move recommendation
+- candidate ranking
+- life-and-death verdicts
+- territory judgment
+- best-move or urgent-point summaries
+- weak-chain output that ranks strategic importance instead of reporting facts

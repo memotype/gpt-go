@@ -295,6 +295,36 @@ class TacticalQueryTests(unittest.TestCase):
         self.assertEqual(data["move_effects"]["white"]["reason"], "suicide")
         self.assertTrue(data["move_effects"]["black"]["legal"])
         self.assertEqual(data["move_effects"]["black"]["resulting_liberty_count"], 6)
+        self.assertEqual(data["touching_chain_anchors"]["black"], ["A2", "B1", "B3", "C2"])
+        preview = data["move_effects"]["black"]["preview"]
+        self.assertEqual(preview["played_chain"]["anchor"], "A2")
+        self.assertEqual(preview["played_chain"]["liberty_count"], 6)
+        self.assertEqual(preview["board_diff"]["changed_points"], ["B2"])
+        self.assertEqual(preview["adjacent_enemy_chains_after_play"], [])
+        self.assertEqual(preview["capture_count_delta"], 0)
+
+    def test_query_point_local_view_reports_crop_and_last_move(self) -> None:
+        state = GameState.new_game()
+        play_sequence(state, [("black", "E5"), ("white", "D5")])
+        data = query_point(state, "E5", local_radius=1)
+        local_view = data["local_view"]
+        self.assertEqual(local_view["center"], "E5")
+        self.assertEqual(local_view["radius"], 1)
+        self.assertEqual(local_view["bounds"], {"min": "D4", "max": "F6"})
+        self.assertEqual([row["row"] for row in local_view["rows"]], [6, 5, 4])
+        center_cell = next(cell for row in local_view["rows"] for cell in row["cells"] if cell["coord"] == "E5")
+        self.assertTrue(center_cell["is_center"])
+        self.assertFalse(center_cell["is_last_move"])
+        last_move_cell = next(cell for row in local_view["rows"] for cell in row["cells"] if cell["coord"] == "D5")
+        self.assertTrue(last_move_cell["is_last_move"])
+
+    def test_query_point_local_view_clips_near_edge(self) -> None:
+        state = GameState.new_game()
+        play_sequence(state, [("black", "A1")])
+        data = query_point(state, "A1", local_radius=2)
+        local_view = data["local_view"]
+        self.assertEqual(local_view["bounds"], {"min": "A1", "max": "C3"})
+        self.assertEqual([row["row"] for row in local_view["rows"]], [3, 2, 1])
 
     def test_query_chain_reports_adjacencies_and_shared_liberties(self) -> None:
         state = configure_position(
@@ -305,9 +335,22 @@ class TacticalQueryTests(unittest.TestCase):
         data = query_chain(state, "D4")
         self.assertEqual(data["chain"], ["D4", "D5"])
         self.assertFalse(data["in_atari"])
+        self.assertEqual(data["chain_anchor"], "D4")
         self.assertEqual(len(data["adjacent_enemy_chains"]), 3)
+        self.assertEqual(sorted(chain["anchor"] for chain in data["adjacent_enemy_chains"]), ["C4", "D3", "E4"])
+        self.assertTrue(all("in_atari" in chain for chain in data["adjacent_enemy_chains"]))
         self.assertEqual(sorted(data["shared_liberties"].keys()), ["C4", "D3", "E4"])
         self.assertEqual(data["shared_liberties"]["D3"], [])
+
+    def test_query_chain_local_view_reports_crop(self) -> None:
+        state = configure_position(
+            black_points=["D4", "D5"],
+            white_points=["C4", "E4", "D3"],
+            side_to_move="black",
+        )
+        data = query_chain(state, "D4", local_radius=1)
+        self.assertEqual(data["local_view"]["center"], "D4")
+        self.assertEqual(data["local_view"]["bounds"], {"min": "C3", "max": "E5"})
 
     def test_query_board_summarizes_chains_and_empty_regions(self) -> None:
         state = configure_position(
@@ -321,6 +364,45 @@ class TacticalQueryTests(unittest.TestCase):
         self.assertEqual(data["chains"][0]["anchor"], "J9")
         self.assertTrue(data["empty_regions"])
         self.assertIn("black", data["empty_regions"][0]["bordering_colors"])
+
+    def test_query_board_last_event_summary_reports_changed_chains(self) -> None:
+        state = GameState.new_game()
+        play_sequence(state, [("black", "E5"), ("white", "D5")])
+        data = query_board(state, include_last_event=True)
+        summary = data["last_event_summary"]
+        self.assertEqual(summary["placed_point"], "D5")
+        self.assertEqual(summary["captured_points"], [])
+        self.assertEqual(summary["changed_points"], ["D5"])
+        self.assertEqual(summary["changed_chain_anchors"], ["D5", "E5"])
+        self.assertEqual({item["status"] for item in summary["changed_chains"]}, {"added", "modified"})
+        added_chain = next(item for item in summary["changed_chains"] if item["status"] == "added")
+        self.assertEqual(added_chain["anchor_after"], "D5")
+
+    def test_query_board_last_event_summary_reports_capture_diffs(self) -> None:
+        state = configure_position(
+            black_points=["A2", "B1", "B3", "C1", "C3"],
+            white_points=["B2", "C2"],
+            side_to_move="black",
+        )
+        apply_play(state, "black", "D2")
+        data = query_board(state, include_last_event=True)
+        summary = data["last_event_summary"]
+        self.assertEqual(summary["placed_point"], "D2")
+        self.assertEqual(summary["captured_points"], ["B2", "C2"])
+        self.assertEqual(summary["changed_points"], ["B2", "C2", "D2"])
+        statuses = {item["status"] for item in summary["changed_chains"]}
+        self.assertIn("added", statuses)
+        self.assertIn("removed", statuses)
+
+    def test_query_board_low_liberty_filter_reports_factual_subset(self) -> None:
+        state = configure_position(
+            black_points=["D4"],
+            white_points=["C4", "E4", "D3"],
+            side_to_move="black",
+        )
+        data = query_board(state, include_low_liberty=True, liberty_threshold=2)
+        self.assertEqual([item["anchor"] for item in data["low_liberty_chains"]], ["D4"])
+        self.assertTrue(data["low_liberty_chains"][0]["in_atari"])
 
     def test_try_play_matches_capture_result_without_mutating_state(self) -> None:
         state = configure_position(
@@ -520,6 +602,43 @@ class CliTests(unittest.TestCase):
             self.assertTrue(board_payload["ok"])
             self.assertIn("chains", board_payload["result"])
 
+            point_local_payload = json.loads(
+                self.run_cli(tmpdir, "game", "query", "point", "--point", "E4", "--local-radius", "1").stdout
+            )
+            self.assertEqual(point_local_payload["result"]["local_view"]["center"], "E4")
+
+            board_rich_payload = json.loads(
+                self.run_cli(
+                    tmpdir,
+                    "game",
+                    "query",
+                    "board",
+                    "--include-last-event",
+                    "--include-low-liberty",
+                    "--liberty-threshold",
+                    "2",
+                ).stdout
+            )
+            self.assertIn("last_event_summary", board_rich_payload["result"])
+            self.assertIn("low_liberty_chains", board_rich_payload["result"])
+
+            self.run_cli(tmpdir, "session", "create", "--name", "center-read")
+            session_payload = json.loads(
+                self.run_cli(
+                    tmpdir,
+                    "session",
+                    "query",
+                    "--name",
+                    "center-read",
+                    "board",
+                    "--include-last-event",
+                    "--include-low-liberty",
+                ).stdout
+            )
+            self.assertTrue(session_payload["ok"])
+            self.assertIn("last_event_summary", session_payload["result"])
+            self.assertIn("low_liberty_chains", session_payload["result"])
+
     def test_cli_contract_exposes_target_and_mutated_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             init_payload = json.loads(self.run_cli(tmpdir, "game", "init").stdout)
@@ -547,8 +666,12 @@ class CliTests(unittest.TestCase):
 
             commands = [
                 ("game", "query", "point", "--point", "E4"),
+                ("game", "query", "point", "--point", "E4", "--local-radius", "1"),
                 ("game", "query", "chain", "--point", "E5"),
+                ("game", "query", "chain", "--point", "E5", "--local-radius", "1"),
                 ("game", "query", "board"),
+                ("game", "query", "board", "--include-last-event"),
+                ("game", "query", "board", "--include-low-liberty", "--liberty-threshold", "2"),
                 ("game", "legal", "--color", "white", "--move", "D5"),
             ]
             for command in commands:
@@ -975,55 +1098,6 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(shown["result"]["state"]["move_number"], 1)
 
                 self.run_cli(tmpdir, "session", "undo", "--name", "race")
-
-
-class PlayerDocsTests(unittest.TestCase):
-    def test_gameplay_governance_requires_strongest_reply_check_for_sharp_candidates(self) -> None:
-        text = (REPO_ROOT / "docs" / "agents" / "player" / "gameplay-governance.md").read_text(encoding="utf-8")
-        self.assertIn("After that, let the position determine the reading.", text)
-        self.assertIn("This is not a move-selection algorithm.", text)
-        self.assertIn("## Post-Move Factual Audit", text)
-        self.assertIn("Do not assume", text)
-        self.assertIn("connection equals safety", text)
-        self.assertIn("## Role-Based Candidate Discipline", text)
-        self.assertIn("urgent defense or capture", text)
-        self.assertIn("move elsewhere that takes profit or initiative", text)
-        self.assertIn("Before trusting a sharp local move, read White's strongest obvious local reply", text)
-        self.assertIn("A move is not validated by finding one friendly continuation.", text)
-        self.assertIn("If Black's move only relocates liberties", text)
-        self.assertIn("Do not confuse short-term severity with profit.", text)
-        self.assertIn("Continue until the local fight is actually", text)
-        self.assertIn("stable, or until the candidate is clearly worse", text)
-        self.assertIn("## Global Reset After Material Change", text)
-        self.assertIn("what changed on the full board", text)
-        self.assertIn("## Concrete Language Discipline", text)
-        self.assertIn("reasoning falsifiable", text)
-        self.assertIn("## Tooling Appendix", text)
-        self.assertIn("### Essential Bookkeeping", text)
-        self.assertIn("### Useful But Optional", text)
-        self.assertIn("### Too Opinionated", text)
-
-    def test_session_prompt_stays_thin_and_delegates_judgment_rules(self) -> None:
-        text = (REPO_ROOT / "docs" / "agents" / "player" / "session-prompt.md").read_text(encoding="utf-8")
-        self.assertIn("This prompt is intentionally thin.", text)
-        self.assertIn("docs/agents/player/gameplay-governance.md", text)
-        self.assertIn("game` is the real game", text)
-        self.assertIn("session` is hypothetical analysis", text)
-        self.assertIn("game resume", text)
-        self.assertIn("game finalize", text)
-        self.assertIn("Follow `docs/agents/player/gameplay-governance.md`", text)
-
-    def test_coder_guidance_prefers_principles_over_ritual_for_player_docs(self) -> None:
-        text = (REPO_ROOT / "docs" / "agents" / "coder" / "project-guidance.md").read_text(encoding="utf-8")
-        self.assertIn("optimize for better", text)
-        self.assertIn("judgment, not more ritual", text)
-        self.assertIn("Prefer principle-based wording over over-prescriptive procedures.", text)
-        self.assertIn("If a docs change would make Codex more compliant but less thoughtful", text)
-        self.assertIn("This repo exists to study GPT/Codex's ability to reason about Go", text)
-        self.assertIn("Treat the tools as:", text)
-        self.assertIn("Codex's eyes into the position", text)
-        self.assertIn("Do not turn the tools into:", text)
-        self.assertIn("a move recommender", text)
 
 
 if __name__ == "__main__":

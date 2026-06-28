@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Query Tooling
+
+- Added informative-only query enrichments across `game query` and
+  `session query`, including local board crops, last-event summaries,
+  low-liberty chain filters, richer point move previews, and expanded chain
+  adjacency details.
+- Changed the CLI reference to document the new additive query flags and JSON
+  payload shapes while keeping the query surface non-mutating and
+  descriptive-only.
+
+### Guidance
+
+- Changed player governance and prompt docs to emphasize adversarial candidate
+  rejection, breadth-before-depth comparison, stronger critic passes, and more
+  explicit rejection of hollow local saves and shape-worsening maintenance
+  moves.
+- Changed coder guidance to treat governance prose as principle-oriented
+  guidance rather than something that should receive brittle wording tests.
+
+### Contract Tests
+
+- Changed contract coverage to exercise the new query flags and factual JSON
+  enrichments while keeping test focus on executable behavior, non-mutation,
+  and CLI/state contracts.
+- Removed brittle governance prose assertions in favor of executable contract
+  coverage only.
+
+### Maintenance
+
+- Added `ISSUES.md` as the authoritative maintainability findings log.
+- Added `SCRATCH.md` as working memory for the issue-resolution plan.
+
 ## 0.1.7 - 2026-06-27
 
 ### Player Guidance

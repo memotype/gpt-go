@@ -248,17 +248,174 @@ Both `game query` and `session query` support:
 
 ```bash
 python3 go_ref.py game query point --point E5
+python3 go_ref.py game query point --point E5 --local-radius 2
 python3 go_ref.py game query chain --point D4
+python3 go_ref.py game query chain --point D4 --local-radius 1
 python3 go_ref.py game query board
+python3 go_ref.py game query board --include-last-event
+python3 go_ref.py game query board --include-low-liberty --liberty-threshold 2
 ```
 
 and:
 
 ```bash
 python3 go_ref.py session query --name center-read point --point E5
+python3 go_ref.py session query --name center-read point --point E5 \
+  --local-radius 2
 python3 go_ref.py session query --name center-read chain --point D4
+python3 go_ref.py session query --name center-read chain --point D4 \
+  --local-radius 1
 python3 go_ref.py session query --name center-read board
+python3 go_ref.py session query --name center-read board --include-last-event
+python3 go_ref.py session query --name center-read board \
+  --include-low-liberty --liberty-threshold 2
 ```
+
+Additional query flags stay factual and non-mutating:
+
+- `--local-radius N`
+  - available on `query point` and `query chain`
+  - returns a structured local crop centered on the queried point
+  - valid range: `1` through `4`
+- `--include-last-event`
+  - available on `query board`
+  - includes a compact factual summary of chains and points changed by the last
+    event when history exists
+- `--include-low-liberty`
+  - available on `query board`
+  - includes a factual list of chains at or below a liberty threshold
+- `--liberty-threshold N`
+  - available on `query board`
+  - defaults to `2`
+  - must be at least `1`
+
+The additive query payloads remain descriptive only. They expose local state,
+chain structure, and factual diffs without recommending moves or ranking
+candidates.
+
+### `query point`
+
+Base fields include:
+
+- `point`
+- `occupant`
+- `neighbors`
+- `empty_neighbor_count`
+- `friendly_neighbors`
+- `enemy_neighbors`
+- `move_effects`
+- `touching_chain_anchors`
+
+When the point is occupied, `chain` also includes:
+
+- `color`
+- `anchor`
+- `stones`
+- `liberties`
+- `liberty_count`
+- `in_atari`
+
+`touching_chain_anchors` reports only adjacent chains:
+
+- on empty points:
+  - `black`
+  - `white`
+- on occupied points:
+  - `occupied_chain`
+  - `friendly`
+  - `enemy`
+
+For legal hypothetical plays in `move_effects[color]`, `preview` includes:
+
+- `played_chain`
+- `board_diff`
+- `adjacent_enemy_chains_after_play`
+- `capture_count_delta`
+- `ko_point_after`
+
+If `--local-radius` is provided, `local_view` includes:
+
+- `center`
+- `radius`
+- `bounds`
+- `rows`
+
+Each local-view cell reports:
+
+- `coord`
+- `occupant`
+- `is_center`
+- `is_last_move`
+
+### `query chain`
+
+Base fields include:
+
+- `point`
+- `occupant`
+- `chain`
+- `liberties`
+- `liberty_count`
+- `in_atari`
+- `chain_anchor`
+- `adjacent_enemy_chains`
+- `adjacent_friendly_chains`
+- `shared_liberties`
+
+Adjacent chain entries include:
+
+- `anchor`
+- `stones`
+- `liberties`
+- `liberty_count`
+- `in_atari`
+
+If `--local-radius` is provided, `local_view` uses the same shape as
+`query point`.
+
+### `query board`
+
+Base fields include:
+
+- `side_to_move`
+- `status`
+- `ko_point`
+- `capture_counts`
+- `chain_summary`
+- `chains`
+- `empty_regions`
+
+Each chain entry includes:
+
+- `anchor`
+- `color`
+- `stones`
+- `liberties`
+- `liberty_count`
+- `in_atari`
+- `adjacent_enemy_chain_anchors`
+
+When requested, additive board fields include:
+
+- `last_event_summary`
+  - `event`
+  - `placed_point`
+  - `captured_points`
+  - `changed_points`
+  - `changed_chain_anchors`
+  - `changed_chains`
+- `low_liberty_chains`
+
+Each `changed_chains` entry reports:
+
+- `anchor_before`
+- `anchor_after`
+- `color`
+- `status`
+- `stones_before`
+- `stones_after`
+- `liberty_count_before`
+- `liberty_count_after`
 
 ## Move Format
 

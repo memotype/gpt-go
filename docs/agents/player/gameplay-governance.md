@@ -165,35 +165,147 @@ ritual. The important ground rules are:
 1. Record White's real move immediately on `game`.
 2. Inspect the updated canonical position with `game query board`.
 
-After that, let the position determine the reading. In general:
+After that, let the position determine the reading.
 
-- use `session` when Black needs tactical reading
-- keep reading while the local fight is forcing or unstable
-- before treating a nearby local issue as mandatory, classify it:
-  - `forced`
-    - White has an immediate capture, atari, ko, decisive cut, forced
-      connection, or similarly concrete tactical consequence if Black tenukis
-  - `contestable`
-    - White can improve locally, but cannot force a decisive result immediately
-  - `open`
-    - there is no immediate local sequence requiring a reply
-- only `forced` issues should consume the turn by default
-- when a local line becomes `contestable` or `open`, stop treating that area
-  as the default plan and compare at least one candidate outside the current
-  local cluster
-- if a local read shows White can still capture or force the same bad outcome
-  after White's strongest obvious reply, mark that plan or group as `failed`
-  or effectively dead rather than treating it as still unsettled
-- once a plan or group is marked `failed`, stop defaulting to moves adjacent
-  to it unless a new line creates a different concrete endpoint such as
-  capture, escape, outside connection, ko, or boundary
-- compare sharp moves against calmer shape only after deciding the local issue
-  is still truly urgent
-- record Black's chosen move on `game` only after the choice is clear enough
+Candidate generation is creative. Candidate approval is adversarial.
+
+Treat every candidate as guilty until proven useful. Try to falsify the move
+before you deepen it. Do not let a move survive just because it is legal,
+active-looking, connected, or adjacent to the current local story.
+
+In general:
+
+1. classify the local issue
+2. generate a few distinct candidate roles
+3. run a shallow factual rejection pass
+4. deepen only the candidates that survive and still lead to a forcing line
+5. run a final critic pass before recording the move on `game`
 
 This is not a move-selection algorithm. The point is to keep real play and
 hypothetical reading separate while giving Codex room to judge shape, life,
 efficiency, and whole-board tradeoffs.
+
+## Urgency Classification
+
+Before treating a nearby local issue as mandatory, classify it:
+
+- `forced`
+  - White has an immediate capture, atari, ko, decisive cut, forced
+    connection, or similarly concrete tactical consequence if Black tenukis
+- `contestable`
+  - White can improve locally, but cannot force a decisive result immediately
+- `open`
+  - there is no immediate local sequence requiring a reply
+
+Only `forced` issues should consume the turn by default.
+
+When a local line becomes `contestable` or `open`, stop treating that area as
+the default plan and compare at least one candidate outside the current local
+cluster.
+
+When White has made a thin, heavy, overcommitted, or low-value local shape and
+Black is not under immediate tactical collapse, compare attacking
+continuations that press on that burden rather than defaulting to another
+maintenance move.
+
+If a local read shows White can still capture or force the same bad outcome
+after White's strongest obvious reply, mark that plan or group as `failed` or
+effectively dead rather than treating it as still unsettled.
+
+Once a plan or group is marked `failed`, stop defaulting to moves adjacent to
+it unless a new line creates a different concrete endpoint such as capture,
+escape, outside connection, ko, or boundary.
+
+## Role-Based Candidate Discipline
+
+Use breadth first as a rejection tool, not as a ritualized search tree.
+
+## Candidate Breadth Before Tactical Depth
+
+When the move is nontrivial, do not jump directly from "that move is bad" to
+"therefore I should add another stone nearby."
+
+Instead, consider a small set of distinct candidate roles such as:
+
+- urgent defense or capture
+- forcing attack
+- pressing from strength to keep White sealed in or low
+- move that makes White heavy while Black stays light
+- connection or escape
+- move that preserves sente by attacking profitably instead of defending
+  passively
+- move elsewhere that takes profit or initiative from the opponent's local commitment
+- quiet move that secures a concrete result
+
+If no chain is currently in atari and no immediate capture, ko, or forcing cut
+has been identified, include at least one candidate that is not adjacent to the
+same focal Black chain. This candidate may still relate to the same side of the
+board, but it should test outward development, counterplay, or whole-board
+timing rather than another nearby maintenance move.
+
+This does not require a fixed number of candidates every turn. Use it when
+Black is in danger of drifting into one-track local play without comparing a
+different kind of idea.
+
+A short first pass should kill obviously bad ideas early so only credible
+candidates receive deeper tactical reading.
+
+## Shallow Factual Rejection
+
+Before trusting a candidate, perform a cheap falsification pass in `session`:
+
+- state the move's concrete purpose in one sentence
+- inspect the resulting Black chain if the move touches, extends, connects to,
+  or creates a local fight
+- inspect the affected White chain if the move claims to attack, squeeze, or
+  reduce it to forcing pressure
+- compare the result against White's strongest obvious local reply
+
+If the move fails this first pass, reject it instead of reading deeper.
+
+Before trusting a sharp local move, read White's strongest obvious local reply
+first.
+
+Do not treat a move as urgent or good merely because it:
+
+- reduces an enemy chain's liberties
+- creates an atari threat that White can answer comfortably
+- looks active or severe for one ply
+- is adjacent to the same weak group as the previous candidate
+- preserves a local liberty count without creating a credible endpoint
+
+If Black's move only relocates liberties, creates a larger but still pressured
+chain, or preserves the same race without a concrete gain, reject it or keep
+reading only if the line remains truly forcing.
+
+Do not confuse short-term severity with profit. A move that looks active for
+one ply may still be poor if White's natural answer leaves Black heavy, thin,
+forced low, or still unable to claim worthwhile outside development.
+
+## Immediate Rejection Rules
+
+Reject a candidate immediately if any of these are true, unless the move
+captures, forces ko, or creates a clearly superior tactical result that can be
+verified in the line:
+
+- the move creates a new Black chain in atari
+- the move claims to attack, but the attacked White chain is not left in atari
+  or a concrete forcing shortage after White's strongest obvious reply
+- the move claims to defend, but Black still faces the same forcing outcome
+  after White's strongest obvious reply
+- the move's purpose cannot be stated concretely and verified from session
+  facts
+- the move only preserves a local story, relocates liberties, or creates a
+  bigger but still bad Black target
+
+Also reject moves that:
+
+- save the chain by crawling underneath, filling Black's own shape, or taking
+  a point Black may later need for eye space or outward development
+- make Black heavier or lower while a different defense keeps White unsettled
+  or preserves outside strength
+- win a local liberty-count comparison but hand White the more valuable
+  follow-up, connection, or shaping point
 
 ## Post-Move Factual Audit
 
@@ -311,6 +423,9 @@ Black with the same failed outcome, stop treating further adjacent moves as
 the default continuation. Mark that local plan as failed and compare at least
 one candidate elsewhere before returning.
 
+Continue until the local fight is actually stable, or until the candidate is
+clearly worse than a quieter alternative.
+
 Do not treat "the move changed something" as sufficient proof. The forcing read
 must show a changed tactical or strategic outcome, not just a changed local
 statistic.
@@ -319,78 +434,22 @@ For this rule, "concrete gain" is Codex's tactical judgment about the branch
 result. It is not referee output and must not be inferred from the CLI as a
 move recommendation or life-and-death judgment.
 
-## Role-Based Candidate Discipline
+## Attacking Is Allowed
 
-When the move is nontrivial, do not jump directly from "that move is bad" to
-"therefore I should add another stone nearby."
+Black does not need a capture to justify pressure.
 
-Instead, consider candidates from distinct roles such as:
+An attack is good if it produces a concrete result such as profit, outside
+strength, initiative, or a heavier and less flexible White shape.
 
-- urgent defense or capture
-- forcing attack
-- connection or escape
-- move elsewhere that takes profit or initiative from the opponent's local commitment
-- quiet move that secures a concrete result
+If White's stones are overconcentrated, under-supported, or overcommitted,
+look for moves that worsen that burden rather than simply "staying safe."
 
-If no chain is currently in atari and no immediate capture, ko, or forcing cut
-has been identified, include at least one candidate that is not adjacent to the
-same focal Black chain. This candidate may still relate to the same side of the
-board, but it should test outward development, counterplay, or whole-board
-timing rather than another nearby maintenance move.
+An attack may still be good without a capture if White's natural reply leaves
+White heavier, more sealed in, less connected, or more burdened than before.
 
-This does not require a fixed number of candidates every turn. Use it when
-Black is in danger of drifting into one-track local play without comparing a
-different kind of idea.
-
-## Candidate Discipline
-
-Do not treat a move as urgent or good merely because it:
-
-- reduces an enemy chain's liberties
-- creates an atari threat that White can answer comfortably
-- looks active or severe for one ply
-- is adjacent to the same weak group as the previous candidate
-- preserves a local liberty count without creating a credible endpoint
-
-Before trusting a sharp local move, read White's strongest obvious local reply
-first. This matters most when Black's move:
-
-- leans on a chain without taking liberties away to 1 immediately
-- creates a new Black chain with only 1 or 2 liberties
-- invites an immediate atari on the newly played Black chain
-- starts a contact fight next to an already unsettled Black chain
-
-Be suspicious of the candidate if White's best reply:
-
-- drives Black into an immediate defensive sequence
-- lets White connect or extend while Black gains no capture, thickness, or
-  stable shape
-- leaves Black less settled than a calmer alternative after the forcing
-  sequence ends
-
-If Black's move only relocates liberties, creates a larger but still pressured
-chain, or preserves the same race without a concrete gain, keep reading or
-reject it.
-
-Reject the candidate outright if its main idea is to save a chain in atari but
-the move only produces a larger Black chain that is still in atari, or still
-under the same forcing liberty shortage, after White's strongest obvious
-reply.
-
-When a sharp candidate fizzles, prefer the calmer move only if it leaves a
-cleaner factual result after White's best reply.
-
-Do not confuse short-term severity with profit. A move that looks active for
-one ply may still be poor if White's natural answer leaves Black heavy, thin,
-forced low, or still unable to claim worthwhile outside development.
-
-Likewise, do not stop reading just because Black found a legal move that saves
-one stone or answers one atari. Continue until the local fight is actually
-stable, or until the candidate is clearly worse than a quieter alternative.
-
-If the local fight is no longer `forced`, stop defaulting to nearby maintenance
-moves and compare at least one outward or non-local alternative before you
-commit.
+Backing off is not automatically superior just because it looks calmer. If a
+more forceful move keeps Black tactically sound while making White's position
+harder to manage, that is a real point in its favor.
 
 ## Pre-Commit Critique
 
@@ -403,6 +462,11 @@ it:
 - what threat it fails to answer
 - what gain it fails to create
 - what useful point it needlessly fills
+- whether it gives up initiative unnecessarily
+- whether it defends in a smaller way than necessary
+- whether it saves the stones in the most submissive available way
+- whether a stronger attacking move would leave White with the harder long-term problem
+- whether it relieves White's burden instead of increasing it
 - what stronger opponent reply makes the move look hollow
 - whether the move is only preserving a local fact that is no longer urgent
 
@@ -422,6 +486,14 @@ unless you can name the exact tactical or positional change the move creates.
 If the critique shows the move only looks legal, connected, thick, or safe
 without producing a concrete gain after White's best reply, reject it and keep
 reading or choose another candidate.
+
+Apply the same rejection if another candidate also saves the group but does so
+with better outside shape, more pressure on White, or less long-term burden.
+Do not justify the heavier move merely because it survives on this turn.
+
+When two candidates are both tactically acceptable, prefer the one that leaves
+White with the more difficult strategic burden unless it creates a new forcing
+defect in Black.
 
 Apply the same rejection if the move "saves" stones by connecting them into a
 larger group that still has just 1 liberty or is still under the same forcing
@@ -482,7 +554,10 @@ unless you can translate the claim into a concrete board consequence such as:
 - a forcing move is removed
 - a territory boundary becomes secure
 - an opponent loses an escape route
+- an opponent is forced into a low shape
+- an opponent becomes heavy
 - Black gains initiative elsewhere
+- Black builds outside strength while White takes only small local relief
 - a capture threat becomes real
 
 The purpose is not to ban positional language. The purpose is to make the
@@ -528,22 +603,31 @@ Use this rhythm unless the move is trivially forced, a pass, or a resignation.
 
 ## Tooling Appendix
 
-This appendix does not add new CLI commands. It records neutral tool ideas
-that may improve Codex's external working memory without turning the referee
-into a strategist.
+This appendix records neutral tooling ideas that improve Codex's external
+working memory without turning the referee into a strategist. Several of these
+are now implemented as additive factual enrichments on existing `query point`,
+`query chain`, and `query board` responses rather than as separate strategic
+tools.
 
 ### Essential Bookkeeping
 
 - summary of chains changed by the last move
-- compact weak-chain summary with stones and liberties only, without ranking
+  - implemented through `query board --include-last-event`
+- compact low-liberty summary with stones and liberties only, without ranking
+  - implemented through `query board --include-low-liberty`
 - local board crop around a point
+  - implemented through `query point --local-radius` and `query chain --local-radius`
 - easier inspection of the resulting chain after a hypothetical move in `session`
+  - implemented through enriched `move_effects[*].preview` in `query point`
 
 ### Useful But Optional
 
 - compact diff between pre-move and post-move chain or liberty state in a session
+  - covered by `session query board --include-last-event`
 - helper query for chains touching a point or changed in a line
+  - covered by `touching_chain_anchors` in `query point` and last-event board summaries
 - easier display of adjacent chains and shared liberties
+  - covered by enriched `query chain`
 
 ### Too Opinionated
 

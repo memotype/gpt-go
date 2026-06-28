@@ -60,6 +60,9 @@ On each White move:
    - `python3 go_ref.py session temp --from game`
 4. Read candidate lines inside that session with `session play` and
    `session query`.
+   - Treat candidate reading as elimination-first: compare a few distinct
+     ideas, reject hollow moves early, and only deepen the lines that survive
+     factual criticism.
    - If two consecutive passes occur during real play or in a session, treat
      that state as scoring; use `game resume` or `session resume` if play must
      continue, or `game finalize` / `session finalize` if the line is truly

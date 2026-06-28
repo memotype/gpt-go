@@ -359,9 +359,14 @@ def parser() -> argparse.ArgumentParser:
     query_subparsers = query_parser.add_subparsers(dest="query_command", required=True)
     query_point_parser = query_subparsers.add_parser("point")
     _ = query_point_parser.add_argument("--point", required=True)
+    _ = query_point_parser.add_argument("--local-radius", type=int)
     query_chain_parser = query_subparsers.add_parser("chain")
     _ = query_chain_parser.add_argument("--point", required=True)
-    _ = query_subparsers.add_parser("board")
+    _ = query_chain_parser.add_argument("--local-radius", type=int)
+    query_board_parser = query_subparsers.add_parser("board")
+    _ = query_board_parser.add_argument("--include-last-event", action="store_true")
+    _ = query_board_parser.add_argument("--include-low-liberty", action="store_true")
+    _ = query_board_parser.add_argument("--liberty-threshold", type=int, default=2)
 
     _ = game_subparsers.add_parser("validate")
     _ = game_subparsers.add_parser("render")
@@ -413,9 +418,14 @@ def parser() -> argparse.ArgumentParser:
     session_query_subparsers = session_query_parser.add_subparsers(dest="query_command", required=True)
     session_query_point = session_query_subparsers.add_parser("point")
     _ = session_query_point.add_argument("--point", required=True)
+    _ = session_query_point.add_argument("--local-radius", type=int)
     session_query_chain = session_query_subparsers.add_parser("chain")
     _ = session_query_chain.add_argument("--point", required=True)
-    _ = session_query_subparsers.add_parser("board")
+    _ = session_query_chain.add_argument("--local-radius", type=int)
+    session_query_board = session_query_subparsers.add_parser("board")
+    _ = session_query_board.add_argument("--include-last-event", action="store_true")
+    _ = session_query_board.add_argument("--include-low-liberty", action="store_true")
+    _ = session_query_board.add_argument("--liberty-threshold", type=int, default=2)
 
     return root
 
@@ -603,19 +613,42 @@ def finalize_command(target: Target) -> dict[str, object]:
     return {"target": target_payload(target), "mutated": True, **result}
 
 
-def query_point_command(target: Target, point: str) -> dict[str, object]:
+def query_point_command(target: Target, point: str, local_radius: int | None = None) -> dict[str, object]:
     state = load_target_state(target)
-    return {"target": target_payload(target), "mutated": False, **query_point(state, point.upper())}
+    return {
+        "target": target_payload(target),
+        "mutated": False,
+        **query_point(state, point.upper(), local_radius=local_radius),
+    }
 
 
-def query_chain_command(target: Target, point: str) -> dict[str, object]:
+def query_chain_command(target: Target, point: str, local_radius: int | None = None) -> dict[str, object]:
     state = load_target_state(target)
-    return {"target": target_payload(target), "mutated": False, **query_chain(state, point.upper())}
+    return {
+        "target": target_payload(target),
+        "mutated": False,
+        **query_chain(state, point.upper(), local_radius=local_radius),
+    }
 
 
-def query_board_command(target: Target) -> dict[str, object]:
+def query_board_command(
+    target: Target,
+    *,
+    include_last_event: bool = False,
+    include_low_liberty: bool = False,
+    liberty_threshold: int = 2,
+) -> dict[str, object]:
     state = load_target_state(target)
-    return {"target": target_payload(target), "mutated": False, **query_board(state)}
+    return {
+        "target": target_payload(target),
+        "mutated": False,
+        **query_board(
+            state,
+            include_last_event=include_last_event,
+            include_low_liberty=include_low_liberty,
+            liberty_threshold=liberty_threshold,
+        ),
+    }
 
 
 def session_create_command(name: str, source_spec: str, *, kind: str) -> dict[str, object]:
@@ -724,11 +757,24 @@ def main(argv: list[str] | None = None) -> int:
                 elif game_command == "query":
                     query_command = cast(str, args.query_command)
                     if query_command == "point":
-                        result = query_point_command(target, cast(str, args.point))
+                        result = query_point_command(
+                            target,
+                            cast(str, args.point),
+                            local_radius=cast(int | None, getattr(args, "local_radius", None)),
+                        )
                     elif query_command == "chain":
-                        result = query_chain_command(target, cast(str, args.point))
+                        result = query_chain_command(
+                            target,
+                            cast(str, args.point),
+                            local_radius=cast(int | None, getattr(args, "local_radius", None)),
+                        )
                     elif query_command == "board":
-                        result = query_board_command(target)
+                        result = query_board_command(
+                            target,
+                            include_last_event=cast(bool, getattr(args, "include_last_event", False)),
+                            include_low_liberty=cast(bool, getattr(args, "include_low_liberty", False)),
+                            liberty_threshold=cast(int, getattr(args, "liberty_threshold", 2)),
+                        )
                     else:
                         raise RefereeError("unknown_command", "Unknown game query command", {"command": query_command})
                 elif game_command == "validate":
@@ -792,11 +838,24 @@ def main(argv: list[str] | None = None) -> int:
                     elif session_command == "query":
                         query_command = cast(str, args.query_command)
                         if query_command == "point":
-                            result = query_point_command(target, cast(str, args.point))
+                            result = query_point_command(
+                                target,
+                                cast(str, args.point),
+                                local_radius=cast(int | None, getattr(args, "local_radius", None)),
+                            )
                         elif query_command == "chain":
-                            result = query_chain_command(target, cast(str, args.point))
+                            result = query_chain_command(
+                                target,
+                                cast(str, args.point),
+                                local_radius=cast(int | None, getattr(args, "local_radius", None)),
+                            )
                         elif query_command == "board":
-                            result = query_board_command(target)
+                            result = query_board_command(
+                                target,
+                                include_last_event=cast(bool, getattr(args, "include_last_event", False)),
+                                include_low_liberty=cast(bool, getattr(args, "include_low_liberty", False)),
+                                liberty_threshold=cast(int, getattr(args, "liberty_threshold", 2)),
+                            )
                         else:
                             raise RefereeError(
                                 "unknown_command",

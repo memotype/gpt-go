@@ -47,6 +47,11 @@ In general:
 If a docs change would make Codex more compliant but less thoughtful, revise it
 toward clearer principles instead of adding more steps.
 
+Do not treat prose guidance as a contract that requires brittle wording tests.
+If documentation needs regression coverage at all, prefer tests for stable
+interfaces, CLI behavior, JSON shape, or other executable contracts rather
+than exact phrases inside governance text.
+
 ## Experimental Boundary
 
 This repo exists to study GPT/Codex's ability to reason about Go without

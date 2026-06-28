@@ -181,6 +181,12 @@ After that, let the position determine the reading. In general:
 - when a local line becomes `contestable` or `open`, stop treating that area
   as the default plan and compare at least one candidate outside the current
   local cluster
+- if a local read shows White can still capture or force the same bad outcome
+  after White's strongest obvious reply, mark that plan or group as `failed`
+  or effectively dead rather than treating it as still unsettled
+- once a plan or group is marked `failed`, stop defaulting to moves adjacent
+  to it unless a new line creates a different concrete endpoint such as
+  capture, escape, outside connection, ko, or boundary
 - compare sharp moves against calmer shape only after deciding the local issue
   is still truly urgent
 - record Black's chosen move on `game` only after the choice is clear enough
@@ -224,6 +230,11 @@ If no credible endpoint appears after concrete reading, reject repeated local
 investment even if the move preserves the current liberty count or avoids an
 ugly-looking shape for one turn.
 
+If a concrete read shows that White can still capture after White's strongest
+obvious reply, and Black's next move does not change that expected result,
+stop describing the local plan as an ongoing defense. Treat it as failed until
+you can name a different concrete endpoint.
+
 When a candidate occupies a current liberty or eye-space point of an already
 connected Black chain, treat it as suspect unless it does something concrete,
 such as:
@@ -233,6 +244,11 @@ such as:
 - creates an external route or expansion path for Black
 - secures a specific territorial boundary
 - resolves a forcing tactical problem
+
+Reject inward or self-filling moves that only tidy liberties, preserve shape
+for one turn, or continue a stale local story without producing one of those
+concrete results. Be especially suspicious of second-line edge chases and "one
+more move here" ideas after the surrounding read has already gone bad.
 
 State the effect on both Black's chain and the affected White chain. If the
 move only improves a local statistic without changing the expected result,
@@ -289,6 +305,11 @@ at least one candidate that is not adjacent to the same focal Black chain.
 
 Reject a candidate if the forced-line read shows Black remains under pressure
 without getting enough in return.
+
+If White's strongest obvious reply still captures, traps, or otherwise leaves
+Black with the same failed outcome, stop treating further adjacent moves as
+the default continuation. Mark that local plan as failed and compare at least
+one candidate elsewhere before returning.
 
 Do not treat "the move changed something" as sufficient proof. The forcing read
 must show a changed tactical or strategic outcome, not just a changed local
@@ -428,6 +449,15 @@ Keep the reset brief. Ask:
 - whether a more urgent area now exists
 - whether the old local fight has become `contestable` or `open` rather than
   `forced`
+
+Before trusting a new candidate in or near the affected area, query the
+relevant points or chains again and verify which stones still exist. Do not
+keep describing threats, ataris, eyes, escapes, or connections that depended
+on a chain that may already have been captured or removed.
+
+If the reset shows that the old supporting chain is gone, or that the local
+result is now fixed, forbid yourself from reasoning from the earlier shape by
+inertia. Start from the refreshed board facts instead.
 
 This is not a requirement to rescan the whole board after every move. It is a
 guardrail against stale plans surviving after the position changed materially.

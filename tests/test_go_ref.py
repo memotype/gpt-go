@@ -1003,17 +1003,15 @@ class PlayerDocsTests(unittest.TestCase):
         self.assertIn("### Useful But Optional", text)
         self.assertIn("### Too Opinionated", text)
 
-    def test_session_prompt_warns_against_one_ply_sharp_moves(self) -> None:
+    def test_session_prompt_stays_thin_and_delegates_judgment_rules(self) -> None:
         text = (REPO_ROOT / "docs" / "agents" / "player" / "session-prompt.md").read_text(encoding="utf-8")
-        self.assertIn("query the resulting", text)
-        self.assertIn("weak Black chain", text)
-        self.assertIn("Do not trust one-ply severity by itself.", text)
-        self.assertIn("Read White's strongest obvious", text)
-        self.assertIn("better", text)
-        self.assertIn("shape or cleaner result", text)
-        self.assertIn("safe, thick, or calm", text)
-        self.assertIn("briefly reset", text)
-        self.assertIn("whole board", text)
+        self.assertIn("This prompt is intentionally thin.", text)
+        self.assertIn("docs/agents/player/gameplay-governance.md", text)
+        self.assertIn("game` is the real game", text)
+        self.assertIn("session` is hypothetical analysis", text)
+        self.assertIn("game resume", text)
+        self.assertIn("game finalize", text)
+        self.assertIn("Follow `docs/agents/player/gameplay-governance.md`", text)
 
     def test_coder_guidance_prefers_principles_over_ritual_for_player_docs(self) -> None:
         text = (REPO_ROOT / "docs" / "agents" / "coder" / "project-guidance.md").read_text(encoding="utf-8")

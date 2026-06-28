@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.7 - 2026-06-27
+
+### Player Guidance
+
+- Changed the detailed gameplay governance so Codex explicitly abandons failed
+  local plans once concrete reading shows White can preserve the same bad
+  outcome after the strongest obvious reply.
+- Changed post-capture and post-loss guidance to require a fresh factual query
+  of the affected area before trusting further local reasoning.
+- Changed candidate-discipline guidance to reject self-filling and stale
+  maintenance moves that do not produce a named concrete result.
+- Changed the thin session prompt to delegate strategic judgment back to the
+  gameplay-governance doc while preserving the operational command flow.
+
+### Tests
+
+- Changed player-doc regression coverage so the session prompt is validated as
+  a thin operational prompt that delegates judgment rules to governance.
+
 ## 0.1.6 - 2026-06-27
 
 ### Player Docs

@@ -13,6 +13,8 @@ This document is for Codex acting as a coding assistant inside this repo.
   the matching rendered board
 - `show`, `legal`, `chain`, and `query` must not mutate stored state or
   rendered output
+- `validate` should remain read-only; `render` may refresh generated output
+  without changing authoritative state
 - same-target CLI commands must remain serialized
 - renderer output is contract-sensitive and should stay deterministic
 

@@ -569,17 +569,12 @@ def chain_command(target: Target, point: str) -> dict[str, object]:
 def validate_command(target: Target) -> dict[str, object]:
     state = load_target_state(target)
     checks = validate_state(state)
-    render_target(target, state)
-    if target.kind == "session":
-        touch_session_meta(target)
     return {"target": target_payload(target), "mutated": False, "valid": True, "checks": checks}
 
 
 def render_command(target: Target) -> dict[str, object]:
     state = load_target_state(target)
     render_target(target, state)
-    if target.kind == "session":
-        touch_session_meta(target)
     return {"target": target_payload(target), "mutated": False, "rendered": True}
 
 

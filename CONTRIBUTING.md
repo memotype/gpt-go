@@ -29,6 +29,8 @@ Read these first:
   - mutating `game` and `session` commands update stored state and refresh the
     matching rendered board
   - `show`, `legal`, `chain`, and `query` stay non-mutating
+  - `validate` stays read-only; `render` may refresh generated board output
+    without changing authoritative state
   - same-target CLI commands remain serialized
 
 ## Common Workflow

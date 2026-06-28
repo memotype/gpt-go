@@ -18,31 +18,31 @@ Severity levels:
 
 ## ISSUE-001
 
-- `Status`: `open`
+- `Status`: `resolved`
 - `Severity`: `high`
 - `Area`: CLI contract / maintenance commands
-- `Summary`: `validate` and `render` currently blur the meaning of
-  `mutated: false` and the repo's non-mutating contract.
-- `Why it matters`: The current contract distinguishes mutating commands from
-  non-mutating ones, but these commands can still rewrite generated output and
-  session metadata. That makes the JSON contract harder to trust and weakens
-  the boundary between inspection commands and maintenance commands.
+- `Summary`: The maintenance-command contract is explicit: `validate` is
+  read-only, `render` refreshes generated board output, and `mutated` refers
+  to authoritative state mutation.
+- `Why it matters`: This keeps the JSON contract trustworthy and preserves a
+  clean boundary between authoritative state mutation and generated-artifact
+  refresh.
 - `Evidence`:
-  - [go_ref.py](/home/isaac/dev/go/go_ref.py:569) `validate_command()`
-    returns `mutated: False` but calls `render_target()` and, for sessions,
-    `touch_session_meta()`.
-  - [go_ref.py](/home/isaac/dev/go/go_ref.py:578) `render_command()` returns
-    `mutated: False` but also writes rendered output and may touch session
-    metadata.
-  - [docs/agents/coder/project-guidance.md](/home/isaac/dev/go/docs/agents/coder/project-guidance.md:12)
-    says mutating commands refresh rendered output and `show`, `legal`,
-    `chain`, and `query` must not mutate stored state or rendered output.
-- `Recommended change`: Tighten the contract explicitly for maintenance
-  commands and choose one policy:
-  - either `validate` and `render` are maintenance mutations and must report
-    `mutated: true`
-  - or `validate` becomes fully read-only and `render` is the only explicit
-    generated-output rewrite path
+  - [go_ref.py](/home/isaac/dev/go/go_ref.py:569) `validate_command()` loads
+    state, runs `validate_state()`, and returns JSON without calling
+    `render_target()` or `touch_session_meta()`.
+  - [go_ref.py](/home/isaac/dev/go/go_ref.py:575) `render_command()` refreshes
+    generated output without changing authoritative state.
+  - [docs/reference/cli.md](/home/isaac/dev/go/docs/reference/cli.md:89)
+    defines `validate` and `render` as maintenance commands and clarifies the
+    contract.
+  - [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:660),
+    [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:693), and
+    [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:707) cover
+    the `mutated` field and non-mutation / artifact-refresh behavior.
+- `Recommended change`: Keep this contract stable in later refactors. If a
+  future command mixes validation with artifact refresh again, document it as a
+  maintenance command explicitly and cover it with executable contract tests.
 
 ## ISSUE-002
 
@@ -103,22 +103,26 @@ Severity levels:
 
 ## ISSUE-005
 
-- `Status`: `open`
+- `Status`: `resolved`
 - `Severity`: `medium`
 - `Area`: Session metadata semantics
-- `Summary`: Session `updated_at` is currently touched by maintenance-style
-  commands as well as gameplay mutations, so its meaning is too broad.
-- `Why it matters`: If `updated_at` does not clearly mean either session-state
-  change, artifact refresh, or any command touch, it becomes hard to reason
-  about and hard to test meaningfully.
+- `Summary`: Session `updated_at` now advances for meaningful session state or
+  persisted session-metadata changes, not for read-only inspection or render
+  refresh.
+- `Why it matters`: This gives the timestamp one clear meaning and makes the
+  metadata behavior easier to reason about and test.
 - `Evidence`:
   - [go_ref.py](/home/isaac/dev/go/go_ref.py:245) `touch_session_meta()`
     updates `updated_at`.
-  - [go_ref.py](/home/isaac/dev/go/go_ref.py:573) and
-    [go_ref.py](/home/isaac/dev/go/go_ref.py:581) show it being called from
-    `validate_command()` and `render_command()`, not just gameplay mutations.
-  - [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:959)
-    currently verifies timestamp monotonicity, not semantic intent.
-- `Recommended change`: Define whether `updated_at` means session-state change,
-  session-artifact change, or any command touch, then align command behavior
-  and tests to that definition.
+  - [go_ref.py](/home/isaac/dev/go/go_ref.py:569) through
+    [go_ref.py](/home/isaac/dev/go/go_ref.py:578) show that
+    `validate_command()` and `render_command()` do not call
+    `touch_session_meta()`.
+  - [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:998)
+    confirms mutation-driven timestamp advancement.
+  - [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:1024) and
+    [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:1067)
+    cover read-only and render-refresh timestamp stability.
+- `Recommended change`: Keep `updated_at` scoped to meaningful session or
+  persisted session-metadata changes. If artifact timestamps become necessary
+  later, add a separate field rather than widening `updated_at` again.

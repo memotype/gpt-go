@@ -109,6 +109,24 @@ These do not mutate stored state:
 - `session chain`
 - `session query`
 
+### Maintenance commands
+
+These keep authoritative state unchanged but may perform validation or refresh
+generated artifacts:
+
+- `game validate`
+- `game render`
+- `session validate`
+- `session render`
+
+`validate` is read-only validation. It checks whether authoritative state is
+internally consistent without rewriting stored state, rendered output, or
+session metadata.
+
+`render` refreshes generated board output from authoritative state. It does not
+change authoritative state, but it may rewrite `game.txt` or a session
+`game.txt`.
+
 ### Concurrency contract
 
 Commands aimed at the same canonical game or the same session are serialized by
@@ -445,6 +463,10 @@ Successful responses include:
 
 Mutating and query responses include a `target` object in `result` describing
 which game or session was addressed.
+
+For CLI responses, `result.mutated` refers to authoritative state mutation.
+Commands such as `render` may still refresh generated output while returning
+`mutated: false`.
 
 Errors print a short human message on stderr and machine-readable JSON on
 stdout with:

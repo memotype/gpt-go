@@ -30,11 +30,24 @@ All notable changes to this project will be documented in this file.
   and CLI/state contracts.
 - Removed brittle governance prose assertions in favor of executable contract
   coverage only.
+- Added explicit contract coverage for read-only `validate`, generated-output
+  refresh via `render`, and session metadata stability under read-only
+  commands.
 
 ### Maintenance
 
+- Changed `validate` so it now remains fully read-only and no longer rewrites
+  rendered output or session metadata.
+- Changed `render` so it remains the explicit generated-output refresh path
+  while leaving authoritative state unchanged.
+- Changed session metadata semantics so `updated_at` advances for meaningful
+  session state or persisted metadata changes, not for read-only inspection or
+  render refresh.
+- Changed the CLI and coder docs to clarify that `mutated` refers to
+  authoritative state mutation rather than generated-artifact refresh.
 - Added `ISSUES.md` as the authoritative maintainability findings log.
-- Added `SCRATCH.md` as working memory for the issue-resolution plan.
+- Changed `SCRATCH.md` so it reflects current-state working memory and the
+  remaining issue queue in present-tense form.
 
 ## 0.1.7 - 2026-06-27
 

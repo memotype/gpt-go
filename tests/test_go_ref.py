@@ -657,6 +657,16 @@ class CliTests(unittest.TestCase):
             self.assertFalse(list_payload["result"]["mutated"])
             self.assertEqual(list_payload["result"]["target"]["kind"], "session_collection")
 
+            validate_payload = json.loads(self.run_cli(tmpdir, "game", "validate").stdout)
+            self.assertTrue(validate_payload["ok"])
+            self.assertFalse(validate_payload["result"]["mutated"])
+            self.assertTrue(validate_payload["result"]["valid"])
+
+            render_payload = json.loads(self.run_cli(tmpdir, "game", "render").stdout)
+            self.assertTrue(render_payload["ok"])
+            self.assertFalse(render_payload["result"]["mutated"])
+            self.assertTrue(render_payload["result"]["rendered"])
+
     def test_game_queries_do_not_mutate_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             self.run_cli(tmpdir, "game", "init")
@@ -679,6 +689,35 @@ class CliTests(unittest.TestCase):
                     self.run_cli(tmpdir, *command)
                     self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), state_before)
                     self.assertEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), game_before)
+
+    def test_game_validate_does_not_mutate_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "game", "play", "--color", "black", "--move", "E5")
+            state_before = Path(tmpdir, "state.json").read_text(encoding="utf-8")
+            game_before = Path(tmpdir, "game.txt").read_text(encoding="utf-8")
+
+            payload = json.loads(self.run_cli(tmpdir, "game", "validate").stdout)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["result"]["valid"])
+            self.assertFalse(payload["result"]["mutated"])
+            self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), state_before)
+            self.assertEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), game_before)
+
+    def test_game_render_refreshes_output_without_mutating_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "game", "play", "--color", "black", "--move", "E5")
+            state_before = Path(tmpdir, "state.json").read_text(encoding="utf-8")
+            corrupted = "corrupted board output\n"
+            Path(tmpdir, "game.txt").write_text(corrupted, encoding="utf-8")
+
+            payload = json.loads(self.run_cli(tmpdir, "game", "render").stdout)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["result"]["rendered"])
+            self.assertFalse(payload["result"]["mutated"])
+            self.assertEqual(Path(tmpdir, "state.json").read_text(encoding="utf-8"), state_before)
+            self.assertNotEqual(Path(tmpdir, "game.txt").read_text(encoding="utf-8"), corrupted)
 
     def test_game_scoring_resume_finalize_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -981,6 +1020,66 @@ class CliTests(unittest.TestCase):
             persisted = json.loads(self.run_cli(tmpdir, "session", "persist", "--name", temp_name, "--as", "saved-temp").stdout)
             self.assertEqual(persisted["result"]["session"]["kind"], "persistent")
             self.assertEqual(persisted["result"]["session"]["base"]["ref"], "game")
+
+    def test_session_validate_is_read_only_for_state_render_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "session", "create", "--name", "readout")
+
+            state_path = Path(tmpdir, "analysis/sessions/readout/state.json")
+            game_path = Path(tmpdir, "analysis/sessions/readout/game.txt")
+            meta_path = Path(tmpdir, "analysis/sessions/readout/meta.json")
+
+            state_before = state_path.read_text(encoding="utf-8")
+            game_before = game_path.read_text(encoding="utf-8")
+            meta_before = meta_path.read_text(encoding="utf-8")
+
+            payload = json.loads(self.run_cli(tmpdir, "session", "validate", "--name", "readout").stdout)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["result"]["valid"])
+            self.assertFalse(payload["result"]["mutated"])
+            self.assertEqual(state_path.read_text(encoding="utf-8"), state_before)
+            self.assertEqual(game_path.read_text(encoding="utf-8"), game_before)
+            self.assertEqual(meta_path.read_text(encoding="utf-8"), meta_before)
+
+    def test_session_render_refreshes_output_without_mutating_state_or_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "session", "create", "--name", "readout")
+
+            state_path = Path(tmpdir, "analysis/sessions/readout/state.json")
+            game_path = Path(tmpdir, "analysis/sessions/readout/game.txt")
+            meta_path = Path(tmpdir, "analysis/sessions/readout/meta.json")
+
+            state_before = state_path.read_text(encoding="utf-8")
+            meta_before = meta_path.read_text(encoding="utf-8")
+            corrupted = "bad session render\n"
+            game_path.write_text(corrupted, encoding="utf-8")
+
+            payload = json.loads(self.run_cli(tmpdir, "session", "render", "--name", "readout").stdout)
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["result"]["rendered"])
+            self.assertFalse(payload["result"]["mutated"])
+            self.assertEqual(state_path.read_text(encoding="utf-8"), state_before)
+            self.assertEqual(meta_path.read_text(encoding="utf-8"), meta_before)
+            self.assertNotEqual(game_path.read_text(encoding="utf-8"), corrupted)
+
+    def test_session_read_only_commands_do_not_advance_updated_at(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.run_cli(tmpdir, "game", "init")
+            self.run_cli(tmpdir, "session", "create", "--name", "readout")
+
+            meta_path = Path(tmpdir, "analysis/sessions/readout/meta.json")
+            initial_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            initial_updated_at = initial_meta["updated_at"]
+
+            self.run_cli(tmpdir, "session", "show", "--name", "readout")
+            self.run_cli(tmpdir, "session", "query", "--name", "readout", "board")
+            self.run_cli(tmpdir, "session", "validate", "--name", "readout")
+            self.run_cli(tmpdir, "session", "render", "--name", "readout")
+
+            after_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            self.assertEqual(after_meta["updated_at"], initial_updated_at)
 
     def test_session_invalid_and_missing_cases_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

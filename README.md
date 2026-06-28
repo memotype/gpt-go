@@ -83,6 +83,8 @@ python3 go_ref.py session temp --from game
 - Mutating `game` and `session` commands update stored state and refresh the
   matching rendered board.
 - Query-style commands stay non-mutating.
+- `validate` is read-only validation; `render` is the explicit generated-board
+  refresh command.
 - Two consecutive passes enter `scoring`; use `resume` to reopen play and
   `finalize` to mark the game finished without rewriting pass history.
 - Same-target CLI commands remain serialized so concurrent processes do not

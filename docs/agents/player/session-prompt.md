@@ -63,6 +63,9 @@ On each White move:
    - Treat candidate reading as elimination-first: compare a few distinct
      ideas, reject hollow moves early, and only deepen the lines that survive
      factual criticism.
+   - On non-forcing turns, do a brief whole-board reset rather than assuming
+     the last local exchange is still the biggest point; detailed rules live in
+     `docs/agents/player/gameplay-governance.md`.
    - If two consecutive passes occur during real play or in a session, treat
      that state as scoring; use `game resume` or `session resume` if play must
      continue, or `game finalize` / `session finalize` if the line is truly

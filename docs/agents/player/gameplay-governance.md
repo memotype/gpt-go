@@ -185,6 +185,33 @@ This is not a move-selection algorithm. The point is to keep real play and
 hypothetical reading separate while giving Codex room to judge shape, life,
 efficiency, and whole-board tradeoffs.
 
+## Whole-Board Priority
+
+When White's move is not clearly `forced`, do not let the last exchange define
+the turn by inertia.
+
+Pause briefly and ask:
+
+- if Black tenukis, what concrete result does White actually gain here
+- if that result is not decisive, what is the largest gain or strongest threat
+  anywhere on the board
+- whether the best move is really near the last stones played, or whether that
+  is only where attention already happens to be
+
+On non-forcing turns, briefly forget the last move and rescan the whole board.
+The purpose is not to ignore local context. The purpose is to stop recent local
+contact from inheriting urgency it has not earned.
+
+Black must distinguish between:
+
+- a group that is not immediately dead
+- a group that is actually becoming settled
+
+A move that merely survives for one more turn is not automatically good. Prefer
+moves that create a base, expand eye space, secure a durable territorial
+boundary, build outside strength that can later be cashed out, or attack in a
+way that produces profit rather than noise.
+
 ## Urgency Classification
 
 Before treating a nearby local issue as mandatory, classify it:
@@ -202,6 +229,10 @@ Only `forced` issues should consume the turn by default.
 When a local line becomes `contestable` or `open`, stop treating that area as
 the default plan and compare at least one candidate outside the current local
 cluster.
+
+Recent locality does not itself make a move urgent. A point is not urgent just
+because it was part of the last exchange, touched the same chain, changed a few
+liberties, or made the shape look unfinished.
 
 When White has made a thin, heavy, overcommitted, or low-value local shape and
 Black is not under immediate tactical collapse, compare attacking
@@ -235,6 +266,10 @@ Instead, consider a small set of distinct candidate roles such as:
 - move that preserves sente by attacking profitably instead of defending
   passively
 - move elsewhere that takes profit or initiative from the opponent's local commitment
+- move that makes a base or expands eye space for an unsettled Black group
+- move that turns influence into a secure territorial boundary
+- move that attacks for profit rather than for one-ply severity
+- move that takes the largest open point when no local area is forcing
 - quiet move that secures a concrete result
 
 If no chain is currently in atari and no immediate capture, ko, or forcing cut
@@ -246,6 +281,9 @@ timing rather than another nearby maintenance move.
 This does not require a fixed number of candidates every turn. Use it when
 Black is in danger of drifting into one-track local play without comparing a
 different kind of idea.
+
+When no forcing line exists, at least one candidate should be judged by what it
+builds rather than by how sharply it touches the last local exchange.
 
 A short first pass should kill obviously bad ideas early so only credible
 candidates receive deeper tactical reading.
@@ -297,6 +335,8 @@ verified in the line:
   facts
 - the move only preserves a local story, relocates liberties, or creates a
   bigger but still bad Black target
+- the move only continues contact with the last exchange without creating
+  life, profit, or a stronger attack than a whole-board alternative
 
 Also reject moves that:
 
@@ -306,6 +346,10 @@ Also reject moves that:
   or preserves outside strength
 - win a local liberty-count comparison but hand White the more valuable
   follow-up, connection, or shaping point
+- reinforce an already safe Black chain without securing new eye space,
+  territory, outside strength, or initiative
+- play a slow atari, hollow local continuation, or "one more move here"
+  reinforcement that White can answer naturally while taking the bigger gain
 
 ## Post-Move Factual Audit
 
@@ -318,6 +362,15 @@ making a connection created safety.
 
 If the candidate merges chains, inspect the merged chain itself. Do not assume
 that connection equals safety just because the stones are now linked.
+
+Ask three concrete questions:
+
+- what does this move build
+- what does this move secure
+- what does this move threaten if White does not answer
+
+If none of those questions has a concrete answer that survives White's
+strongest obvious reply, reject the move.
 
 Reject the move as a successful defense if the post-move chain:
 
@@ -341,6 +394,10 @@ the move is supposed to create, such as:
 If no credible endpoint appears after concrete reading, reject repeated local
 investment even if the move preserves the current liberty count or avoids an
 ugly-looking shape for one turn.
+
+Do not approve a move merely because it made Black look more connected or less
+embarrassing locally. A move that neither improves life, claims profit, nor
+creates a stronger attack should usually lose to a candidate that does.
 
 If a concrete read shows that White can still capture after White's strongest
 obvious reply, and Black's next move does not change that expected result,
@@ -533,6 +590,28 @@ inertia. Start from the refreshed board facts instead.
 
 This is not a requirement to rescan the whole board after every move. It is a
 guardrail against stale plans surviving after the position changed materially.
+
+## Whole-Board Reset After Non-Forcing Turns
+
+Use a similar reset when White's move is `contestable` or `open` rather than
+`forced`.
+
+Before committing another nearby move by habit, ask:
+
+- if Black plays elsewhere, what exact gain does White get here
+- is that gain larger than Black's best whole-board alternative
+- is the local continuation improving life, territory, or attack profit, or
+  merely continuing the same story
+- what non-local or orthogonal candidate competes with the best local move
+
+On these turns, compare the best local continuation against at least one
+whole-board candidate. "Continue the local story" is not, by itself, a reason
+to play nearby.
+
+Be explicit about narrative inertia: a move can feel natural because it is
+tactically adjacent to the action, even when the action is no longer the
+largest thing on the board. Reject adjacency-driven moves that do not justify
+the turn with a concrete gain.
 
 ## Concrete Language Discipline
 

@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 No unreleased changes yet.
 
+## 0.1.9 - 2026-06-29
+
+### Player Review Docs
+
+- Changed player governance to emphasize whole-board resets, life/base/profit
+  judgment, anti-inertia play, and stronger rejection of empty reinforcement
+  and tactically-adjacent tunnel vision.
+- Added a post-game player review flow with a dedicated evaluation rubric and
+  a thin review prompt for analyzing finished games and suggesting governance
+  improvements.
+- Changed the player doc indexes so the live-play and post-game review docs
+  are easier to discover from both `docs/agents/player/` and `docs/agents/`.
+
 ## 0.1.8 - 2026-06-29
 
 ### Query Tooling

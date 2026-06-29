@@ -3,7 +3,7 @@
 `ISSUES.md` is the authoritative findings log. This file is working memory for
 the current implementation order, current decisions, and remaining work.
 
-The current release line is `0.1.8`.
+The current release line is `0.1.9`.
 
 ## Current State
 
@@ -29,6 +29,13 @@ The current validation status is:
 - `basedpyright` passes
 - `python3 go_ref.py game validate` passes
 - `npm run lint:md` passes
+
+The current player-doc set now includes:
+
+- live-play governance in `docs/agents/player/gameplay-governance.md`
+- a thin live session prompt in `docs/agents/player/session-prompt.md`
+- a post-game review rubric in `docs/agents/player/evaluation-rubric.md`
+- a thin post-game review prompt in `docs/agents/player/review-prompt.md`
 
 ## Active Priorities
 

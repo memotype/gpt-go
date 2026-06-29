@@ -3,6 +3,9 @@
 This file tracks maintainability, contract, and boundary issues that should be
 addressed over time. Update `Status` as work progresses.
 
+All tracked issues are currently resolved. This file remains the authoritative
+maintainability log for future findings.
+
 Allowed statuses:
 
 - `open`
@@ -46,7 +49,7 @@ Severity levels:
 
 ## ISSUE-002
 
-- `Status`: `open`
+- `Status`: `resolved`
 - `Severity`: `medium`
 - `Area`: Player governance / documentation boundaries
 - `Summary`: The player governance doc currently carries concrete CLI/tooling
@@ -58,16 +61,17 @@ Severity levels:
   - [docs/agents/README.md](/home/isaac/dev/go/docs/agents/README.md:11) says
     shared tool behavior and CLI contracts live in the CLI reference.
   - [docs/agents/player/gameplay-governance.md](/home/isaac/dev/go/docs/agents/player/gameplay-governance.md:604)
-    contains an appendix naming concrete implemented flags and payload fields.
+    now keeps only principle-level tool-boundary guidance and points concrete
+    syntax back to the CLI reference.
   - [docs/reference/cli.md](/home/isaac/dev/go/docs/reference/cli.md:247)
     already documents the same query surfaces canonically.
-- `Recommended change`: Keep governance principle-focused, replace detailed
-  tool-surface listings with short references to the CLI doc, and leave only
-  strategic boundary language in governance.
+- `Recommended change`: Keep governance principle-focused, point concrete tool
+  syntax and payloads back to the CLI reference, and leave only strategic
+  boundary language in governance.
 
 ## ISSUE-003
 
-- `Status`: `open`
+- `Status`: `resolved`
 - `Severity`: `medium`
 - `Area`: CLI parser / command dispatch
 - `Summary`: `game` and `session` query parser setup and command dispatch are
@@ -75,19 +79,22 @@ Severity levels:
 - `Why it matters`: The duplication raises drift risk when flags, payload
   options, or command routing change, especially for shared query behavior.
 - `Evidence`:
-  - [go_ref.py](/home/isaac/dev/go/go_ref.py:337) through
-    [go_ref.py](/home/isaac/dev/go/go_ref.py:428) duplicate parser setup for
-    `game query` and `session query`.
-  - [go_ref.py](/home/isaac/dev/go/go_ref.py:740) through
-    [go_ref.py](/home/isaac/dev/go/go_ref.py:876) duplicate query dispatch and
-    argument plumbing across `game` and `session`.
-- `Recommended change`: Introduce shared helpers for query parser registration
-  and query command execution. If that still leaves too much branching, move to
-  a small command table per target without changing CLI behavior.
+  - [go_ref.py](/home/isaac/dev/go/go_ref.py:358) and
+    [go_ref.py](/home/isaac/dev/go/go_ref.py:403) now share query parser
+    registration through `add_query_subcommands()`.
+  - [go_ref.py](/home/isaac/dev/go/go_ref.py:659) centralizes query dispatch
+    and argument plumbing through `dispatch_query_command()`.
+  - [go_ref.py](/home/isaac/dev/go/go_ref.py:778) and
+    [go_ref.py](/home/isaac/dev/go/go_ref.py:837) route both `game query` and
+    `session query` through the same helper without changing CLI behavior.
+- `Recommended change`: Keep shared query helpers as the single place for
+  query parser and dispatch changes. If broader command duplication becomes a
+  future problem, consider a small command table per target while preserving
+  the existing JSON contract and locking behavior.
 
 ## ISSUE-004
 
-- `Status`: `open`
+- `Status`: `resolved`
 - `Severity`: `medium`
 - `Area`: Referee utility / snapshot restoration
 - `Summary`: `restore_snapshot()` hardcodes `komi` and `handicap` instead of
@@ -96,10 +103,19 @@ Severity levels:
   silently break future config changes and make undo, replay, and last-event
   helpers less robust than they appear.
 - `Evidence`:
-  - [referee.py](/home/isaac/dev/go/referee.py:392) reconstructs state with
-    literal `komi=6.5` and `handicap=0`.
-- `Recommended change`: Preserve config from the source state or snapshot path
-  rather than literals, and keep snapshot/restore utilities config-agnostic.
+  - [referee.py](/home/isaac/dev/go/referee.py:346) threads live config into
+    `restore_snapshot()` when reconstructing the pre-event state for
+    `last_event_summary`.
+  - [referee.py](/home/isaac/dev/go/referee.py:398) restores snapshots from
+    explicit `schema_version`, `board_size`, `komi`, and `handicap` inputs
+    instead of literals.
+  - [referee.py](/home/isaac/dev/go/referee.py:1229) preserves the active
+    game's config while replaying undo history through restored snapshots.
+  - [tests/test_go_ref.py](/home/isaac/dev/go/tests/test_go_ref.py:251)
+    verifies undo preserves non-default `komi` and `handicap`.
+- `Recommended change`: Keep snapshot/restore helpers config-agnostic. If
+  future configurable state is added, thread it through the same restore path
+  rather than reintroducing literals.
 
 ## ISSUE-005
 

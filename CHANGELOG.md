@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## 0.1.8 - 2026-06-29
+
 ### Query Tooling
 
 - Added informative-only query enrichments across `game query` and

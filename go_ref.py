@@ -356,17 +356,7 @@ def parser() -> argparse.ArgumentParser:
     _ = chain_parser.add_argument("--point", required=True)
 
     query_parser = game_subparsers.add_parser("query")
-    query_subparsers = query_parser.add_subparsers(dest="query_command", required=True)
-    query_point_parser = query_subparsers.add_parser("point")
-    _ = query_point_parser.add_argument("--point", required=True)
-    _ = query_point_parser.add_argument("--local-radius", type=int)
-    query_chain_parser = query_subparsers.add_parser("chain")
-    _ = query_chain_parser.add_argument("--point", required=True)
-    _ = query_chain_parser.add_argument("--local-radius", type=int)
-    query_board_parser = query_subparsers.add_parser("board")
-    _ = query_board_parser.add_argument("--include-last-event", action="store_true")
-    _ = query_board_parser.add_argument("--include-low-liberty", action="store_true")
-    _ = query_board_parser.add_argument("--liberty-threshold", type=int, default=2)
+    add_query_subcommands(query_parser)
 
     _ = game_subparsers.add_parser("validate")
     _ = game_subparsers.add_parser("render")
@@ -415,19 +405,23 @@ def parser() -> argparse.ArgumentParser:
 
     session_query_parser = session_subparsers.add_parser("query")
     _ = session_query_parser.add_argument("--name", required=True)
-    session_query_subparsers = session_query_parser.add_subparsers(dest="query_command", required=True)
-    session_query_point = session_query_subparsers.add_parser("point")
-    _ = session_query_point.add_argument("--point", required=True)
-    _ = session_query_point.add_argument("--local-radius", type=int)
-    session_query_chain = session_query_subparsers.add_parser("chain")
-    _ = session_query_chain.add_argument("--point", required=True)
-    _ = session_query_chain.add_argument("--local-radius", type=int)
-    session_query_board = session_query_subparsers.add_parser("board")
-    _ = session_query_board.add_argument("--include-last-event", action="store_true")
-    _ = session_query_board.add_argument("--include-low-liberty", action="store_true")
-    _ = session_query_board.add_argument("--liberty-threshold", type=int, default=2)
+    add_query_subcommands(session_query_parser)
 
     return root
+
+
+def add_query_subcommands(parent: argparse.ArgumentParser) -> None:
+    query_subparsers = parent.add_subparsers(dest="query_command", required=True)
+    query_point_parser = query_subparsers.add_parser("point")
+    _ = query_point_parser.add_argument("--point", required=True)
+    _ = query_point_parser.add_argument("--local-radius", type=int)
+    query_chain_parser = query_subparsers.add_parser("chain")
+    _ = query_chain_parser.add_argument("--point", required=True)
+    _ = query_chain_parser.add_argument("--local-radius", type=int)
+    query_board_parser = query_subparsers.add_parser("board")
+    _ = query_board_parser.add_argument("--include-last-event", action="store_true")
+    _ = query_board_parser.add_argument("--include-low-liberty", action="store_true")
+    _ = query_board_parser.add_argument("--liberty-threshold", type=int, default=2)
 
 
 def parse_color(value: str) -> Color:
@@ -646,6 +640,30 @@ def query_board_command(
     }
 
 
+def dispatch_query_command(target: Target, args: argparse.Namespace) -> dict[str, object]:
+    query_command = cast(str, args.query_command)
+    if query_command == "point":
+        return query_point_command(
+            target,
+            cast(str, args.point),
+            local_radius=cast(int | None, getattr(args, "local_radius", None)),
+        )
+    if query_command == "chain":
+        return query_chain_command(
+            target,
+            cast(str, args.point),
+            local_radius=cast(int | None, getattr(args, "local_radius", None)),
+        )
+    if query_command == "board":
+        return query_board_command(
+            target,
+            include_last_event=cast(bool, getattr(args, "include_last_event", False)),
+            include_low_liberty=cast(bool, getattr(args, "include_low_liberty", False)),
+            liberty_threshold=cast(int, getattr(args, "liberty_threshold", 2)),
+        )
+    raise RefereeError("unknown_command", f"Unknown {target.kind} query command", {"command": query_command})
+
+
 def session_create_command(name: str, source_spec: str, *, kind: str) -> dict[str, object]:
     destination = ensure_session_missing(name)
     source = parse_source_spec(source_spec)
@@ -750,28 +768,7 @@ def main(argv: list[str] | None = None) -> int:
                 elif game_command == "chain":
                     result = chain_command(target, cast(str, args.point))
                 elif game_command == "query":
-                    query_command = cast(str, args.query_command)
-                    if query_command == "point":
-                        result = query_point_command(
-                            target,
-                            cast(str, args.point),
-                            local_radius=cast(int | None, getattr(args, "local_radius", None)),
-                        )
-                    elif query_command == "chain":
-                        result = query_chain_command(
-                            target,
-                            cast(str, args.point),
-                            local_radius=cast(int | None, getattr(args, "local_radius", None)),
-                        )
-                    elif query_command == "board":
-                        result = query_board_command(
-                            target,
-                            include_last_event=cast(bool, getattr(args, "include_last_event", False)),
-                            include_low_liberty=cast(bool, getattr(args, "include_low_liberty", False)),
-                            liberty_threshold=cast(int, getattr(args, "liberty_threshold", 2)),
-                        )
-                    else:
-                        raise RefereeError("unknown_command", "Unknown game query command", {"command": query_command})
+                    result = dispatch_query_command(target, args)
                 elif game_command == "validate":
                     result = validate_command(target)
                 elif game_command == "render":
@@ -831,32 +828,7 @@ def main(argv: list[str] | None = None) -> int:
                     elif session_command == "chain":
                         result = chain_command(target, cast(str, args.point))
                     elif session_command == "query":
-                        query_command = cast(str, args.query_command)
-                        if query_command == "point":
-                            result = query_point_command(
-                                target,
-                                cast(str, args.point),
-                                local_radius=cast(int | None, getattr(args, "local_radius", None)),
-                            )
-                        elif query_command == "chain":
-                            result = query_chain_command(
-                                target,
-                                cast(str, args.point),
-                                local_radius=cast(int | None, getattr(args, "local_radius", None)),
-                            )
-                        elif query_command == "board":
-                            result = query_board_command(
-                                target,
-                                include_last_event=cast(bool, getattr(args, "include_last_event", False)),
-                                include_low_liberty=cast(bool, getattr(args, "include_low_liberty", False)),
-                                liberty_threshold=cast(int, getattr(args, "liberty_threshold", 2)),
-                            )
-                        else:
-                            raise RefereeError(
-                                "unknown_command",
-                                "Unknown session query command",
-                                {"command": query_command},
-                            )
+                        result = dispatch_query_command(target, args)
                     elif session_command == "validate":
                         result = validate_command(target)
                     elif session_command == "render":

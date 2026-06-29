@@ -248,6 +248,19 @@ class RefereeRulesTests(unittest.TestCase):
         self.assertEqual(state.move_number, 0)
         self.assertEqual(len(state.move_log), 0)
 
+    def test_undo_preserves_non_default_game_configuration(self) -> None:
+        state = GameState.new_game()
+        state.komi = 0.5
+        state.handicap = 3
+        play_sequence(state, [("black", "E5"), ("white", "D5")])
+
+        undo(state, 1)
+
+        self.assertEqual(state.komi, 0.5)
+        self.assertEqual(state.handicap, 3)
+        self.assertEqual(state.move_number, 1)
+        self.assertEqual(state.move_log[-1].point, "E5")
+
     def test_undo_around_scoring_resume_and_finalize(self) -> None:
         state = GameState.new_game()
         apply_pass(state, "black")

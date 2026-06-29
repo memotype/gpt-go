@@ -343,7 +343,14 @@ def diff_chain_maps(
 def build_last_event_summary(state: GameState) -> dict[str, Any] | None:
     if not state.history:
         return None
-    previous = restore_snapshot(state.history[-1], state.history[:-1])
+    previous = restore_snapshot(
+        state.history[-1],
+        state.history[:-1],
+        schema_version=state.schema_version,
+        board_size=state.board_size,
+        komi=state.komi,
+        handicap=state.handicap,
+    )
     event = last_event(state)
     diff = diff_chain_maps(compact_chain_map(previous.board), compact_chain_map(state.board))
     placed_point = event.point if event and event.kind == "play" else None
@@ -389,12 +396,20 @@ def snapshot_state(state: GameState) -> HistoryEntry:
     )
 
 
-def restore_snapshot(entry: HistoryEntry, history: list[HistoryEntry]) -> GameState:
+def restore_snapshot(
+    entry: HistoryEntry,
+    history: list[HistoryEntry],
+    *,
+    schema_version: int,
+    board_size: int,
+    komi: float,
+    handicap: int,
+) -> GameState:
     return GameState(
-        schema_version=SCHEMA_VERSION,
-        board_size=BOARD_SIZE,
-        komi=6.5,
-        handicap=0,
+        schema_version=schema_version,
+        board_size=board_size,
+        komi=komi,
+        handicap=handicap,
         status=entry.status,
         event_number=entry.event_number,
         move_number=entry.move_number,
@@ -1214,7 +1229,14 @@ def undo(state: GameState, count: int) -> dict[str, Any]:
     restored: GameState | None = None
     for _ in range(count):
         snapshot = history.pop()
-        restored = restore_snapshot(snapshot, history[:])
+        restored = restore_snapshot(
+            snapshot,
+            history[:],
+            schema_version=state.schema_version,
+            board_size=state.board_size,
+            komi=state.komi,
+            handicap=state.handicap,
+        )
         history = restored.history[:]
     if restored is None:
         raise RefereeError("invalid_undo", "Nothing to undo")

@@ -3,11 +3,16 @@
 `ISSUES.md` is the authoritative findings log. This file is working memory for
 the current implementation order, current decisions, and remaining work.
 
+The current release line is `0.1.8`.
+
 ## Current State
 
 Stage one is complete for:
 
 - `ISSUE-001`
+- `ISSUE-002`
+- `ISSUE-003`
+- `ISSUE-004`
 - `ISSUE-005`
 
 The current command and metadata contract is:
@@ -27,20 +32,9 @@ The current validation status is:
 
 ## Active Priorities
 
-Recommended execution order from here:
-
-1. `ISSUE-004`
-2. `ISSUE-003`
-3. `ISSUE-002`
-
-Why this order:
-
-- `ISSUE-004` is a focused utility-layer correctness fix and benefits from the
-  newly stable stage-one contract.
-- `ISSUE-003` is a structural refactor and should preserve the stage-one
-  command semantics.
-- `ISSUE-002` is documentation boundary cleanup and should describe the final
-  tool and contract state after code refactors settle.
+No open maintainability issues remain in `ISSUES.md` right now. The current
+priority is to keep the released command, metadata, and documentation contract
+stable while future work is scoped.
 
 ## Current Decisions
 
@@ -56,46 +50,11 @@ These decisions are active unless a later plan changes them deliberately:
 
 ## Remaining Issue Plan
 
-### ISSUE-004: snapshot restoration config handling
+No remaining queued issues. Keep the current contract stable in future work:
 
-Current goal:
-
-- make snapshot restoration preserve non-board configuration explicitly instead
-  of relying on literals
-
-Current attack:
-
-- inspect `snapshot_state()` and `restore_snapshot()` together
-- preserve `komi`, `handicap`, and any other required config in the snapshot /
-  restore flow
-- add focused tests for undo / restore with non-default configuration
-
-### ISSUE-003: duplicated query parser and dispatch logic
-
-Current goal:
-
-- reduce duplicated `game` / `session` query plumbing without changing CLI
-  behavior
-
-Current attack:
-
-- extract shared parser registration for the query subcommands
-- extract shared query-dispatch plumbing for common flags and routing
-- preserve JSON shape, CLI names, and locking behavior exactly
-
-### ISSUE-002: governance doc boundary cleanup
-
-Current goal:
-
-- move concrete tool-surface detail back under the CLI reference and keep
-  governance focused on judgment and tool boundaries
-
-Current attack:
-
-- trim concrete query-flag and payload-shape detail from player governance
-- replace repeated tool-surface detail with references to
+- shared query parser and dispatch changes should stay centralized
+- governance docs should stay principle-oriented and defer syntax details to
   `docs/reference/cli.md`
-- keep the informative-only boundary language intact
 
 ## Validation Rules
 

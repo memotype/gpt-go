@@ -601,39 +601,24 @@ Use this rhythm unless the move is trivially forced, a pass, or a resignation.
 - Do not dump large JSON outputs to the user unless specifically needed.
 - If a White move is illegal, explain briefly and ask for another move.
 
-## Tooling Appendix
+## Tooling Boundary
 
-This appendix records neutral tooling ideas that improve Codex's external
-working memory without turning the referee into a strategist. Several of these
-are now implemented as additive factual enrichments on existing `query point`,
-`query chain`, and `query board` responses rather than as separate strategic
-tools.
+Use the referee only for factual state inspection, legality, captures, ko,
+history, chains, liberties, rendering, and hypothetical reading support.
+Concrete command syntax and payload details live in
+[../../reference/cli.md](../../reference/cli.md).
 
-### Essential Bookkeeping
+When deciding whether a tool addition belongs here, keep the distinction sharp:
 
-- summary of chains changed by the last move
-  - implemented through `query board --include-last-event`
-- compact low-liberty summary with stones and liberties only, without ranking
-  - implemented through `query board --include-low-liberty`
-- local board crop around a point
-  - implemented through `query point --local-radius` and `query chain --local-radius`
-- easier inspection of the resulting chain after a hypothetical move in `session`
-  - implemented through enriched `move_effects[*].preview` in `query point`
+- good tooling improves external working memory with neutral factual evidence
+- bad tooling smuggles strategic judgment into the referee
 
-### Useful But Optional
+Keep the following out of the tool layer:
 
-- compact diff between pre-move and post-move chain or liberty state in a session
-  - covered by `session query board --include-last-event`
-- helper query for chains touching a point or changed in a line
-  - covered by `touching_chain_anchors` in `query point` and last-event board summaries
-- easier display of adjacent chains and shared liberties
-  - covered by enriched `query chain`
-
-### Too Opinionated
-
-- move recommendation
-- candidate ranking
+- move recommendations
+- candidate rankings
+- urgency rankings
 - life-and-death verdicts
 - territory judgment
-- best-move or urgent-point summaries
-- weak-chain output that ranks strategic importance instead of reporting facts
+- best-move summaries
+- hidden strategic policy disguised as query output

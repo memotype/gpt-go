@@ -36,4 +36,9 @@ Before considering the work complete:
 2. Run `basedpyright`.
 3. If rendering or state transitions changed, run `python3 go_ref.py game validate`.
 4. If Markdown changed, run `npm run lint:md`.
+
+Tooling notes:
+
+- `package.json` is for Markdown lint only.
+- There is no separate JavaScript test suite unless the repo adds one later.
 ```

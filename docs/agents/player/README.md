@@ -11,8 +11,8 @@ Read these first:
    - move discipline, urgency classification, adversarial candidate rejection,
      breadth-before-depth comparison, whole-board resets, life/base/territory
      judgment, session-based reading hygiene, attack-minded punishment of
-     overplay, anti-inertia guardrails, and concrete vetoes for hollow
-     tactical or shape-worsening saves
+     overplay, anti-inertia guardrails against drifting back into cooled local
+     fights, and concrete vetoes for hollow tactical or shape-worsening saves
 3. [./session-prompt.md](./session-prompt.md)
    - thin copy-pasteable prompt for starting a live game session
 4. [./evaluation-rubric.md](./evaluation-rubric.md)

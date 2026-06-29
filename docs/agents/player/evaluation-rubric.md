@@ -58,6 +58,8 @@ Warning signs:
 - Black stayed tactically adjacent to the action by habit
 - Black continued the same local plan without re-earning its urgency
 - Black treated “this is where the last move was” as a reason to play nearby
+- Black made a good reset, then immediately relapsed into unjustified local
+  re-entry on the next non-forcing turn
 
 ### Life And Settling
 
@@ -114,6 +116,8 @@ Warning signs:
 - Black jumped from “that local move is bad” to “so I should play another move
   next to it”
 - Black compared shape tidying moves without asking what any of them built
+- Black compared a whole-board move on one turn, then reverted to
+  adjacency-only comparison on the next `contestable` or `open` turn
 
 ### Attack Quality
 
@@ -137,6 +141,7 @@ Warning signs:
 Note how often these showed up:
 
 - tactically adjacent tunnel vision
+- reset relapse
 - empty reinforcement
 - slow atari
 - self-filling safe shape
@@ -168,6 +173,8 @@ Common failure modes include:
 - Black over-valued moves that were tactically adjacent to the action
 - Black confused “recent” with “urgent”
 - Black kept a local story alive after its forcing value was gone
+- Black reset correctly once, then re-entered the same cooled area without
+  proving that the return move beat a whole-board alternative
 - Black defended chains that were already safe enough while ignoring bigger
   opportunities
 - Black attacked without cashing out territory, outside strength, or sente
@@ -194,6 +201,8 @@ Use this template when summarizing a game:
 - Best Black move:
 - Worst Black move:
 - First move where Black drifted into local inertia:
+- First move where Black re-entered a cooled local story without
+  re-establishing urgency:
 - Number of non-forcing turns where Black failed to compare a whole-board alternative:
 - Number of moves that clearly improved life, base, territory, or attack profit:
 - Main recurring failure mode:

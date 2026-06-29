@@ -613,6 +613,59 @@ tactically adjacent to the action, even when the action is no longer the
 largest thing on the board. Reject adjacency-driven moves that do not justify
 the turn with a concrete gain.
 
+## Local Re-Entry After Reset
+
+After Black has already reset the board and either tenukied or recognized that
+an area is no longer `forced`, returning to that same area on the next
+`contestable` or `open` turn is suspect by default.
+
+Treat this as a `reset relapse` check. The burden is not on the whole-board
+candidate to prove itself again. The burden is on the local re-entry move to
+re-earn the turn.
+
+Before approving a local re-entry candidate, state what it changes in concrete
+terms. The move should create at least one of these results:
+
+- a real capture path
+- atari or another forcing tactical consequence
+- a base or clearer eye-space plan
+- a secure territorial boundary
+- useful outside strength
+- denial of a specific White gain that is larger than Black's best open point
+
+If the move cannot name one of those results concretely, reject it.
+
+Use this anti-relapse checklist:
+
+- what exact White gain am I preventing by returning here
+- why is that gain larger than the best open point elsewhere
+- if this move succeeds, what durable asset does Black own afterward
+
+If those answers are vague, or only describe tidier shape, more liberties, a
+larger connected chain, or a more comfortable local story, reject the move.
+
+For any candidate adjacent to the same local cluster as Black's previous move
+on a `contestable` or `open` turn, compare it against at least one whole-board
+candidate before approval.
+
+Veto local re-entry moves that:
+
+- only enlarge an already safe Black chain
+- improve liberties without changing the expected local outcome
+- preserve contact after the area's urgency has already expired
+- continue the previous local story because Black was just playing there
+
+Be especially suspicious of the following rhythm:
+
+- Black resets correctly once the fight cools down
+- White does not create a new `forced` reason to return
+- Black goes back anyway with a reinforcing move that neither captures,
+  settles a weak group, nor claims profit
+
+That is not merely a small move. It is a failure to treat the reset as real. A
+correct tenuki or reset does not grant permission to drift back on the next
+turn without a newly earned reason.
+
 ## Concrete Language Discipline
 
 Positional judgment is allowed, but vague praise is not enough on its own.

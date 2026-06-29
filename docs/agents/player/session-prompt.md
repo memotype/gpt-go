@@ -66,6 +66,9 @@ On each White move:
    - On non-forcing turns, do a brief whole-board reset rather than assuming
      the last local exchange is still the biggest point; detailed rules live in
      `docs/agents/player/gameplay-governance.md`.
+   - After a reset on a `contestable` or `open` turn, any nearby follow-up must
+     still beat a whole-board alternative with a concrete endpoint rather than
+     just tidying local shape.
    - If two consecutive passes occur during real play or in a session, treat
      that state as scoring; use `game resume` or `session resume` if play must
      continue, or `game finalize` / `session finalize` if the line is truly

@@ -6,6 +6,34 @@ All notable changes to this project will be documented in this file.
 
 No unreleased changes yet.
 
+## 0.1.10 - 2026-06-29
+
+### Player Governance
+
+- Changed player governance to add an explicit `reset relapse` guardrail for
+  unjustified local re-entry after a correct whole-board reset.
+- Changed non-forcing-turn guidance so nearby follow-ups must re-earn the turn
+  with a concrete endpoint instead of shape tidying or "one more move here"
+  reinforcement.
+- Changed the live player prompt and player-doc index so the new anti-inertia
+  rule remains visible in thin session guidance.
+
+### Review Guidance
+
+- Changed the evaluation rubric to flag good resets followed by unjustified
+  local re-entry as a recurring anti-pattern.
+- Changed the review prompt and review template so post-game analysis names the
+  first move where Black returned to a cooled local story without
+  re-establishing urgency.
+
+### Coder Guidance
+
+- Changed coder guidance, contributing instructions, and the coder session
+  prompt to document the concrete tooling map and full release validation
+  sequence more explicitly.
+- Clarified that `package.json` exists for Markdown linting only and that the
+  repo currently has no separate JavaScript test or build pipeline.
+
 ## 0.1.9 - 2026-06-29
 
 ### Player Review Docs

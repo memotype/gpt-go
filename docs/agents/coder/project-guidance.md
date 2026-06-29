@@ -90,16 +90,29 @@ should remain in Codex's reasoning rather than being smuggled into the tools.
 - [tests/test_go_ref.py](../../../tests/test_go_ref.py)
   - behavior and contract regression coverage
 
+## Tooling Map
+
+- Python tests: `python3 -m unittest discover -s tests -v`
+- Type checking: `basedpyright`
+- Markdown lint: `npm run lint:md`
+- Read-only canonical state validation: `python3 go_ref.py game validate`
+
+`package.json` exists for Markdown tooling only. Do not assume there is a
+separate JavaScript test or build pipeline unless the repo adds one later.
+
+There is no required formatter step for release at the moment.
+
 ## Validation
 
-Run:
+For normal code changes, run:
 
 ```bash
 python3 -m unittest discover -s tests -v
 basedpyright
 ```
 
-If rendering or state transitions changed, also run:
+If rendering, canonical state transitions, or referee behavior changed, also
+run:
 
 ```bash
 python3 go_ref.py game validate
@@ -108,5 +121,17 @@ python3 go_ref.py game validate
 If Markdown changed, also run:
 
 ```bash
+npm run lint:md
+```
+
+For docs-only changes, run `npm run lint:md`. Run the broader validation set
+as well if release readiness is requested.
+
+For a full release-style validation pass, run in this order:
+
+```bash
+python3 -m unittest discover -s tests -v
+basedpyright
+python3 go_ref.py game validate
 npm run lint:md
 ```

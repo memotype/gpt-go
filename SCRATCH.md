@@ -3,7 +3,7 @@
 `ISSUES.md` is the authoritative findings log. This file is working memory for
 the current implementation order, current decisions, and remaining work.
 
-The current release line is `0.1.9`.
+The current release line is `0.1.10`.
 
 ## Current State
 

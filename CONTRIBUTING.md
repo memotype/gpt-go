@@ -60,3 +60,11 @@ python3 go_ref.py game validate
 ```bash
 npm run lint:md
 ```
+
+Notes:
+
+- `package.json` is only used for Markdown linting in this repo.
+- There is no separate JavaScript test or build step at the moment.
+- For docs-only changes, `npm run lint:md` is the minimum expected check.
+- For release readiness, run the full sequence above even if the change was
+  docs-only.

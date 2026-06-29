@@ -31,6 +31,8 @@ Identify:
 - Black's best move
 - Black's worst move
 - the first move where Black drifted into local inertia, if any
+- the first move where Black re-entered a cooled local story without
+  re-establishing urgency, if any
 - the main recurring failure mode
 - the main positive pattern
 - the governance lesson suggested by this game

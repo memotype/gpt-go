@@ -35,10 +35,11 @@ Before considering the work complete:
 1. Run `python3 -m unittest discover -s tests -v`.
 2. Run `basedpyright`.
 3. If rendering or state transitions changed, run `python3 go_ref.py game validate`.
-4. If Markdown changed, run `npm run lint:md`.
+4. If Markdown changed, run `pymarkdown --strict-config scan --recurse .`.
 
 Tooling notes:
 
-- `package.json` is for Markdown lint only.
+- `pyproject.toml` contains the contributor `dev` extra and Markdown lint
+  configuration.
 - There is no separate JavaScript test suite unless the repo adds one later.
 ```

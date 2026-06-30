@@ -35,6 +35,13 @@ Read these first:
 
 ## Common Workflow
 
+Install contributor tools when you need the optional linting and type-checking
+commands:
+
+```bash
+python3 -m pip install -e '.[dev]'
+```
+
 1. Update code and tests together.
 2. Update docs if the command surface or contract changes.
 3. Run:
@@ -58,13 +65,15 @@ python3 go_ref.py game validate
 6. If Markdown changed, also run:
 
 ```bash
-npm run lint:md
+pymarkdown --strict-config scan --recurse .
 ```
 
 Notes:
 
-- `package.json` is only used for Markdown linting in this repo.
+- `pyproject.toml` contains the contributor `dev` extra and the Markdown lint
+  configuration for this repo.
 - There is no separate JavaScript test or build step at the moment.
-- For docs-only changes, `npm run lint:md` is the minimum expected check.
+- For docs-only changes, `pymarkdown --strict-config scan --recurse .` is the
+  minimum expected check.
 - For release readiness, run the full sequence above even if the change was
   docs-only.

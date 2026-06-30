@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpt-go"
+version = "0.2.0"
+description = "A 9x9 Go referee for LLM tool-use experiments."
+readme = "README.md"
+
+[project.optional-dependencies]
+dev = [
+  "pymarkdownlnt==0.9.38",
+]
+
+[tool.setuptools]
+py-modules = ["go_ref", "models", "referee", "render"]
+
+[tool.pymarkdown]
+system.exclude_path = [".pytest_cache", "node_modules"]
+
+[tool.pymarkdown.plugins.md029]
+enabled = false
+
+[tool.pymarkdown.plugins.md032]
+enabled = false
+
+[tool.pymarkdown.plugins.md013]
+line_length = 80

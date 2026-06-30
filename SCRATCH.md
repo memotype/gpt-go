@@ -3,7 +3,7 @@
 `ISSUES.md` is the authoritative findings log. This file is working memory for
 the current implementation order, current decisions, and remaining work.
 
-The current release line is `0.1.10`.
+The current release line is `0.2.0`.
 
 ## Current State
 
@@ -28,7 +28,7 @@ The current validation status is:
 - `python3 -m unittest discover -s tests -v` passes
 - `basedpyright` passes
 - `python3 go_ref.py game validate` passes
-- `npm run lint:md` passes
+- `pymarkdown --strict-config scan --recurse .` passes
 
 The current player-doc set now includes:
 
@@ -76,4 +76,4 @@ Run when rendering or state-transition behavior changes:
 
 Run when Markdown changes:
 
-- `npm run lint:md`
+- `pymarkdown --strict-config scan --recurse .`

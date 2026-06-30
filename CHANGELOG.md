@@ -6,6 +6,28 @@ All notable changes to this project will be documented in this file.
 
 No unreleased changes yet.
 
+## 0.2.0 - 2026-06-30
+
+### Onboarding
+
+- Rewrote `README.md` to explain the project as a 9x9 Go tool-use experiment
+  for LLMs, clarify the referee boundary, and make the initial workflow more
+  approachable for human readers.
+- Changed the README examples so they show verified JSON output, full rendered
+  board output, and the distinction between machine-readable CLI responses and
+  `game.txt` as the human board view.
+
+### Contributor Tooling
+
+- Replaced the Node-based Markdown lint setup with a Python-native
+  `pymarkdownlnt` workflow.
+- Added a minimal `pyproject.toml` with contributor `dev` extras and
+  PyMarkdown configuration.
+- Removed the Node-only Markdown lint files and updated contributor-facing docs
+  to use `python3 -m pip install -e '.[dev]'` and
+  `pymarkdown --strict-config scan --recurse .`.
+- Changed `.gitignore` to ignore editable-install metadata with `*.egg-info/`.
+
 ## 0.1.10 - 2026-06-29
 
 ### Player Governance
@@ -31,8 +53,8 @@ No unreleased changes yet.
 - Changed coder guidance, contributing instructions, and the coder session
   prompt to document the concrete tooling map and full release validation
   sequence more explicitly.
-- Clarified that `package.json` exists for Markdown linting only and that the
-  repo currently has no separate JavaScript test or build pipeline.
+- Clarified the then-current Markdown lint tooling and that the repo had no
+  separate JavaScript test or build pipeline.
 
 ## 0.1.9 - 2026-06-29
 

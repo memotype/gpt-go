@@ -94,11 +94,12 @@ should remain in Codex's reasoning rather than being smuggled into the tools.
 
 - Python tests: `python3 -m unittest discover -s tests -v`
 - Type checking: `basedpyright`
-- Markdown lint: `npm run lint:md`
+- Markdown lint: `pymarkdown --strict-config scan --recurse .`
 - Read-only canonical state validation: `python3 go_ref.py game validate`
 
-`package.json` exists for Markdown tooling only. Do not assume there is a
-separate JavaScript test or build pipeline unless the repo adds one later.
+`pyproject.toml` contains the contributor `dev` extra and PyMarkdown
+configuration. Do not assume there is a separate JavaScript test or build
+pipeline unless the repo adds one later.
 
 There is no required formatter step for release at the moment.
 
@@ -121,11 +122,11 @@ python3 go_ref.py game validate
 If Markdown changed, also run:
 
 ```bash
-npm run lint:md
+pymarkdown --strict-config scan --recurse .
 ```
 
-For docs-only changes, run `npm run lint:md`. Run the broader validation set
-as well if release readiness is requested.
+For docs-only changes, run `pymarkdown --strict-config scan --recurse .`. Run
+the broader validation set as well if release readiness is requested.
 
 For a full release-style validation pass, run in this order:
 
@@ -133,5 +134,5 @@ For a full release-style validation pass, run in this order:
 python3 -m unittest discover -s tests -v
 basedpyright
 python3 go_ref.py game validate
-npm run lint:md
+pymarkdown --strict-config scan --recurse .
 ```
